@@ -8,8 +8,6 @@ portfolio.db-wal
 portfolio.db-shm
 checkpoints/
 lightning_logs/
-.claude/
-CLAUDE.md
 dist/
 .pytest_cache/
 .playwright-mcp/
