@@ -1,0 +1,45 @@
+# === Web Framework ===
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# === Database ===
+sqlalchemy>=2.0
+aiosqlite
+
+# === OpenAI ===
+openai>=1.60
+
+# === Market Data ===
+requests
+httpx
+aiohttp
+playwright
+
+# === Technical Analysis ===
+ta
+pandas>=2.2
+numpy>=1.26
+
+# === Machine Learning ===
+scikit-learn>=1.4
+xgboost>=2.0
+
+# === Deep Learning (GPU) ===
+# torch instalado separadamente com CUDA: pip install torch --index-url https://download.pytorch.org/whl/cu121
+pytorch-lightning>=2.2
+pytorch-forecasting>=1.1
+
+# === Optimization ===
+optuna>=3.5
+
+# === Email ===
+aiosmtplib
+jinja2
+
+# === Scheduler ===
+apscheduler>=3.10
+
+# === Utilities ===
+python-dotenv
