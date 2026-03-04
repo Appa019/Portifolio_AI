@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Loader2 } from 'lucide-react'
 import { getConfiguracoes, salvarConfiguracoes } from '../api/client'
 import { useToast } from '../components/ui/Toast'
 import { SkeletonCard } from '../components/ui/Skeleton'
 
 export default function Config() {
+  const qc = useQueryClient()
   const { data: configs = [], isLoading } = useQuery({ queryKey: ['configuracoes'], queryFn: getConfiguracoes })
   const { toast } = useToast()
   const [form, setForm] = useState<Record<string, string>>({})
@@ -16,7 +17,10 @@ export default function Config() {
 
   const mutacao = useMutation({
     mutationFn: salvarConfiguracoes,
-    onSuccess: () => toast('Configuracoes salvas com sucesso!', 'success'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['configuracoes'] })
+      toast('Configuracoes salvas com sucesso!', 'success')
+    },
     onError: () => toast('Erro ao salvar configuracoes', 'error'),
   })
 

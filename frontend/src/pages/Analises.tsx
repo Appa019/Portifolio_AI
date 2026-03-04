@@ -28,7 +28,11 @@ export default function Analises() {
       notifyDashboard(data.job_id)
       qc.invalidateQueries({ queryKey: ['analises'] })
     },
-    onError: (e: any) => toast(e?.response?.data?.detail ?? 'Erro ao disparar analise', 'error'),
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao disparar analise'
+      toast(msg, 'error')
+    },
   })
 
   const mutAporte = useMutation({
@@ -38,7 +42,11 @@ export default function Analises() {
       notifyDashboard(data.job_id)
       qc.invalidateQueries({ queryKey: ['analises'] })
     },
-    onError: (e: any) => toast(e?.response?.data?.detail ?? 'Erro ao disparar analise de aporte', 'error'),
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao disparar analise de aporte'
+      toast(msg, 'error')
+    },
   })
 
   const handleExpand = async (id: number) => {

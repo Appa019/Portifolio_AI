@@ -32,13 +32,15 @@ export default function Transacoes() {
       qc.invalidateQueries({ queryKey: ['transacoes'] })
       qc.invalidateQueries({ queryKey: ['portfolio-ativos'] })
       qc.invalidateQueries({ queryKey: ['portfolio-resumo'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-alocacao'] })
       toast('Transacao registrada com sucesso!', 'success')
       setErro('')
       setForm({ ticker: '', tipo_operacao: 'compra', quantidade: 0, preco_unitario: 0, data_operacao: new Date().toISOString().split('T')[0] })
       setBusca('')
     },
     onError: (e: any) => {
-      const msg = e?.response?.data?.detail ?? 'Erro ao registrar transacao'
+      const detail = e?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao registrar transacao'
       setErro(msg)
       toast(msg, 'error')
     },

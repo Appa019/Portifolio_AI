@@ -14,14 +14,6 @@ logger = logging.getLogger(__name__)
 BRT = timezone("America/Sao_Paulo")
 
 
-def _get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def atualizar_precos():
     """A cada 1h: atualiza preços dos ativos em carteira e cria snapshot."""
     from app.services.market_data import get_crypto_price, get_stock_price, to_crypto_id
@@ -98,6 +90,7 @@ def verificar_lockups():
 
         db.commit()
     except Exception as e:
+        db.rollback()
         logger.error(f"[scheduler] Erro verificando lockups: {e}")
     finally:
         db.close()

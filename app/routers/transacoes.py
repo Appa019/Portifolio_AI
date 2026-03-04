@@ -67,7 +67,11 @@ def criar(payload: TransacaoCreate, db: Session = Depends(get_db)):
     if not ativo:
         ativo = Ativo(ticker=ticker_upper, tipo=tipo_ativo, nome=ticker_upper)
         db.add(ativo)
-        db.flush()
+        try:
+            db.flush()
+        except Exception:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"Erro ao criar ativo '{ticker_upper}' no banco de dados")
 
     # Validar lockup em vendas
     if payload.tipo_operacao == "venda":
