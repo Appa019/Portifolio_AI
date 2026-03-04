@@ -52,11 +52,11 @@ _B3_TICKERS: dict[str, str] = {
     "ABCB4": "ABC Brasil PN", "BMGB4": "BMG PN",
     "BPAN4": "Banco Pan PN", "MODL11": "Banco Modal Units",
     # --- Energia e Utilities ---
-    "ENBR3": "Energias do Brasil ON", "NEOE3": "Neoenergia ON",
+    "ENBR3": "EDP Energias do Brasil ON", "NEOE3": "Neoenergia ON",
     "AURE3": "Auren Energia ON", "AESB3": "AES Brasil ON",
     "CMIG3": "Cemig ON", "CPLE3": "Copel ON",
     "EGIE3": "Engie Brasil ON", "TRPL4": "Transmissão Paulista PN",
-    "ALUP11": "Alupar Units", "ENBR3": "EDP Brasil ON",
+    "ALUP11": "Alupar Units",
     "CSMG3": "Copasa ON", "SAPR11": "Sanepar Units",
     "SAPR4": "Sanepar PN", "GEPA4": "Gera Paranapanema PN",
     "OMGE3": "Omega Energia ON",
@@ -100,7 +100,7 @@ _B3_TICKERS: dict[str, str] = {
     # --- Transporte e Logística ---
     "CCRO3": "CCR ON", "ECOR3": "EcoRodovias ON",
     "GOLL4": "GOL PN", "STBP3": "Santos Brasil ON",
-    "HBSA3": "Hidrovias do Brasil ON", "LOGN3": "Log-In ON",
+    "LOGN3": "Log-In ON",
     "MOVI3": "Movida ON", "VAMO3": "Vamos ON",
     # --- Seguros e Previdência ---
     "CXSE3": "Caixa Seguridade ON", "WIZC3": "Wiz ON",

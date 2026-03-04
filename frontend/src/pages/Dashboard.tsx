@@ -18,10 +18,10 @@ export default function Dashboard() {
   const { data: resumo, isLoading: loadingResumo } = useQuery({ queryKey: ['portfolio-resumo'], queryFn: getPortfolioResumo, refetchInterval: 60_000 })
   const { data: ativos = [], isLoading: loadingAtivos } = useQuery({ queryKey: ['portfolio-ativos'], queryFn: getPortfolioAtivos, refetchInterval: 60_000 })
   const { data: alocacao } = useQuery({ queryKey: ['portfolio-alocacao'], queryFn: getPortfolioAlocacao })
-  const { data: evolucao = [], refetch: refetchEvolucao } = useQuery({ queryKey: ['portfolio-evolucao', periodo], queryFn: () => getPortfolioEvolucao(periodo) })
+  const { data: evolucao = [] } = useQuery({ queryKey: ['portfolio-evolucao', periodo], queryFn: () => getPortfolioEvolucao(periodo) })
   const { data: macro } = useQuery({ queryKey: ['macro'], queryFn: getMacro, staleTime: 300_000 })
 
-  const handlePeriodo = (p: string) => { setPeriodo(p); refetchEvolucao() }
+  const handlePeriodo = (p: string) => { setPeriodo(p) }
 
   return (
     <div className="space-y-6">
@@ -67,7 +67,7 @@ export default function Dashboard() {
             {[
               { label: 'Selic', value: typeof macro?.selic === 'number' && isFinite(macro.selic) ? `${macro.selic.toFixed(2)}% a.a.` : '\u2014' },
               { label: 'CDI', value: typeof macro?.cdi === 'number' && isFinite(macro.cdi) ? `${macro.cdi.toFixed(2)}% a.a.` : '\u2014' },
-              { label: 'IPCA', value: typeof macro?.ipca === 'number' && isFinite(macro.ipca) ? `${macro.ipca.toFixed(2)}%` : '\u2014' },
+              { label: 'IPCA', value: typeof macro?.ipca_acumulado_12m === 'number' && isFinite(macro.ipca_acumulado_12m) ? `${macro.ipca_acumulado_12m.toFixed(2)}%` : '\u2014' },
               { label: 'PTAX (USD)', value: typeof macro?.ptax === 'number' && isFinite(macro.ptax) ? `R$ ${macro.ptax.toFixed(4)}` : '\u2014' },
             ].map(row => (
               <div key={row.label} className="flex justify-between items-center text-sm">

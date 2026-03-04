@@ -137,7 +137,10 @@ def _set_cache(db: Session, ticker: str, fonte: str, tipo_dado: str, dados: dict
             entry.dados_json = dados_json
             entry.atualizado_em = agora
             entry.expira_em = agora + timedelta(hours=ttl_hours)
-            db.commit()
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
 
 
 # === Ações B3 (Yahoo Scraper) ===

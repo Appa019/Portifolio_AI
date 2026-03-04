@@ -137,7 +137,7 @@ def _build_stealth_headers(ua: str) -> dict:
     Firefox e Safari não enviam sec-ch-ua, por isso não adicionamos nesses casos.
     """
     headers: dict[str, str] = {}
-    if "Firefox" in ua or "Safari" in ua and "Chrome" not in ua:
+    if "Firefox" in ua or ("Safari" in ua and "Chrome" not in ua):
         return headers  # Firefox/Safari não usam sec-ch-ua
     if "Edg/" in ua:
         m = re.search(r"Edg/(\d+)", ua)

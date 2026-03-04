@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ class CryptoAgent(BaseAgent):
         super().__init__(db)
         self._job_id: str | None = None
         self._seen_cryptos: set[str] = set()
+        self._seen_lock = threading.Lock()
 
     def system_prompt(self) -> str:
         hoje = date.today().isoformat()
@@ -167,10 +169,11 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             else:
                 logger.warning(f"[crypto_agent] Crypto ID inválido rejeitado: '{crypto_id}'")
                 return json.dumps({"erro": f"Crypto '{crypto_id}' não encontrada. Use IDs válidos: bitcoin, ethereum, solana, etc."})
-        if crypto_id in self._seen_cryptos:
-            logger.info(f"[crypto_agent] Crypto duplicada ignorada: {crypto_id}")
-            return json.dumps({"erro": f"Crypto '{crypto_id}' já foi analisada nesta execução"})
-        self._seen_cryptos.add(crypto_id)
+        with self._seen_lock:
+            if crypto_id in self._seen_cryptos:
+                logger.info(f"[crypto_agent] Crypto duplicada ignorada: {crypto_id}")
+                return json.dumps({"erro": f"Crypto '{crypto_id}' já foi analisada nesta execução"})
+            self._seen_cryptos.add(crypto_id)
 
         from app.agents.crypto_analyst import CryptoAnalyst
         from app.database import SessionLocal

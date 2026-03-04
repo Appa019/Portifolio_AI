@@ -92,14 +92,18 @@ def criar(payload: TransacaoCreate, db: Session = Depends(get_db)):
         observacao=payload.observacao,
     )
     db.add(transacao)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao salvar transação no banco de dados")
     db.refresh(transacao)
     return _to_out(transacao)
 
 
 @router.get("/{transacao_id}", response_model=TransacaoOut)
 def detalhe(transacao_id: int, db: Session = Depends(get_db)):
-    t = db.query(Transacao).filter_by(id=transacao_id).first()
+    t = db.query(Transacao).options(joinedload(Transacao.ativo)).filter_by(id=transacao_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
     return _to_out(t)

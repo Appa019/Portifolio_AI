@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { BrainCircuit, Play, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
-import { getAnalises, executarAnalise, executarAnaliseAporte, formatDataHora } from '../api/client'
+import { getAnalises, getAnalise, executarAnalise, executarAnaliseAporte, formatDataHora } from '../api/client'
 import type { ExecutarResponse } from '../api/client'
 import { useToast } from '../components/ui/Toast'
 import EmptyState from '../components/ui/EmptyState'
@@ -11,6 +11,8 @@ export default function Analises() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [expandido, setExpandido] = useState<number | null>(null)
+  const [detalheCache, setDetalheCache] = useState<Record<number, string>>({})
+  const [loadingDetalhe, setLoadingDetalhe] = useState<number | null>(null)
   const [valorAporte, setValorAporte] = useState('')
 
   const { data: analises = [], isLoading } = useQuery({ queryKey: ['analises'], queryFn: getAnalises })
@@ -38,6 +40,25 @@ export default function Analises() {
     },
     onError: (e: any) => toast(e?.response?.data?.detail ?? 'Erro ao disparar analise de aporte', 'error'),
   })
+
+  const handleExpand = async (id: number) => {
+    if (expandido === id) {
+      setExpandido(null)
+      return
+    }
+    setExpandido(id)
+    if (!(id in detalheCache)) {
+      setLoadingDetalhe(id)
+      try {
+        const detalhe = await getAnalise(id)
+        setDetalheCache(prev => ({ ...prev, [id]: detalhe.output_completo || 'Sem detalhes disponíveis.' }))
+      } catch {
+        setDetalheCache(prev => ({ ...prev, [id]: 'Erro ao carregar detalhes.' }))
+      } finally {
+        setLoadingDetalhe(null)
+      }
+    }
+  }
 
   const scoreColor = (s: number | null) => {
     if (s == null) return '#9ca3af'
@@ -102,7 +123,7 @@ export default function Analises() {
               style={{ color: '#111827' }}
               onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fa')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => setExpandido(expandido === a.id ? null : a.id)}>
+              onClick={() => handleExpand(a.id)}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium" style={{ color: '#111827' }}>{a.tipo_analise}</span>
@@ -118,12 +139,21 @@ export default function Analises() {
               <span className="text-xs flex-shrink-0" style={{ color: '#9ca3af' }}>{formatDataHora(a.data)}</span>
               {expandido === a.id ? <ChevronUp size={14} style={{ color: '#9ca3af', flexShrink: 0 }} /> : <ChevronDown size={14} style={{ color: '#9ca3af', flexShrink: 0 }} />}
             </button>
-            {expandido === a.id && a.output_completo && (
-              <div className="px-5 pb-5 border-t" style={{ borderColor: '#e2e8f0' }}>
-                <pre className="mt-4 text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto" style={{ color: '#374151', fontFamily: 'Inter, sans-serif' }}>
-                  {a.output_completo}
-                </pre>
-              </div>
+            {expandido === a.id && (
+              loadingDetalhe === a.id ? (
+                <div className="px-5 pb-5 border-t" style={{ borderColor: '#e2e8f0' }}>
+                  <div className="flex items-center gap-2 mt-4">
+                    <Loader2 size={14} className="animate-spin" style={{ color: '#9ca3af' }} />
+                    <span className="text-xs" style={{ color: '#9ca3af' }}>Carregando analise...</span>
+                  </div>
+                </div>
+              ) : detalheCache[a.id] ? (
+                <div className="px-5 pb-5 border-t" style={{ borderColor: '#e2e8f0' }}>
+                  <pre className="mt-4 text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto" style={{ color: '#374151', fontFamily: 'Inter, sans-serif' }}>
+                    {detalheCache[a.id]}
+                  </pre>
+                </div>
+              ) : null
             )}
           </div>
         ))}

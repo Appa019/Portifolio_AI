@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import threading
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ class B3Agent(BaseAgent):
         super().__init__(db)
         self._job_id: str | None = None
         self._seen_tickers: set[str] = set()
+        self._seen_lock = threading.Lock()
 
     def system_prompt(self) -> str:
         hoje = date.today().isoformat()
@@ -164,10 +166,11 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
         if not _TICKER_RE.match(ticker):
             logger.warning(f"[b3_agent] Ticker inválido rejeitado: '{ticker}'")
             return json.dumps({"erro": f"Ticker '{ticker}' formato inválido. Use formato B3: PETR4, VALE3, WEGE3"})
-        if ticker in self._seen_tickers:
-            logger.info(f"[b3_agent] Ticker duplicado ignorado: {ticker}")
-            return json.dumps({"erro": f"Ticker '{ticker}' já foi analisado nesta execução"})
-        self._seen_tickers.add(ticker)
+        with self._seen_lock:
+            if ticker in self._seen_tickers:
+                logger.info(f"[b3_agent] Ticker duplicado ignorado: {ticker}")
+                return json.dumps({"erro": f"Ticker '{ticker}' já foi analisado nesta execução"})
+            self._seen_tickers.add(ticker)
 
         from app.agents.ticker_analyst import TickerAnalyst
         from app.database import SessionLocal

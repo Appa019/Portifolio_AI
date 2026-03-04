@@ -245,8 +245,12 @@ class BaseAgent(ABC):
             acao_recomendada=acao,
         )
         self.db.add(analise)
-        self.db.commit()
-        self.db.refresh(analise)
+        try:
+            self.db.commit()
+            self.db.refresh(analise)
+        except Exception as e:
+            self.db.rollback()
+            logger.warning(f"[{self.agent_name}] Falha ao salvar análise: {e}")
         return analise
 
     def _load_context(self) -> AgentContext | None:
@@ -269,7 +273,11 @@ class BaseAgent(ABC):
                 resumo_contexto=resumo or None,
             )
             self.db.add(ctx)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            logger.warning(f"[{self.agent_name}] Falha ao salvar contexto: {e}")
 
     def _log_costs(self):
         if self._total_input_tokens > 0 or self._total_output_tokens > 0:

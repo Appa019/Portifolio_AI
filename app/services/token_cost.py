@@ -45,8 +45,13 @@ def log_token_cost(
         descricao=descricao,
     )
     db.add(entry)
-    db.commit()
-    db.refresh(entry)
+    try:
+        db.commit()
+        db.refresh(entry)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Falha ao salvar custo de tokens ({agente}/{modelo}): {e}")
+        return entry
 
     logger.info(
         f"Token cost logged: {agente}/{modelo} — "

@@ -136,7 +136,7 @@ export interface CustoResumo {
 export interface MacroData {
   selic: number | null
   cdi: number | null
-  ipca: number | null
+  ipca_acumulado_12m: number | null
   ptax: number | null
 }
 
@@ -149,7 +149,7 @@ export interface Configuracao {
 export interface ProgressEvent {
   step: string
   message: string
-  percent: number
+  percent?: number
   agent?: string
   function?: string
   round?: number
@@ -194,7 +194,7 @@ export const getCustosPorAgente = () =>
 
 export const getMacro = () => api.get<MacroData>('/market/macro').then(r => r.data)
 export const searchTickers = (q: string) =>
-  api.get<Array<{ ticker: string; nome: string }>>('/market/search', { params: { q } }).then(r => r.data)
+  api.get<Array<{ ticker: string; nome: string; origem: string }>>('/market/search', { params: { q } }).then(r => r.data)
 
 export const getConfiguracoes = () => api.get<Configuracao[]>('/configuracoes/').then(r => r.data)
 export const salvarConfiguracoes = (configuracoes: Record<string, string>) =>

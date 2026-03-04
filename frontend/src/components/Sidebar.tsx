@@ -73,7 +73,7 @@ export default function Sidebar() {
             })}
             onMouseEnter={e => {
               const el = e.currentTarget
-              if (!el.classList.contains('active')) {
+              if (el.getAttribute('aria-current') !== 'page') {
                 el.style.color = '#e2e8f0'
               }
             }}

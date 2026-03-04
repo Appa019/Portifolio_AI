@@ -16,7 +16,7 @@ export default function Transacoes() {
   const [filtroTicker, setFiltroTicker] = useState('')
   const [form, setForm] = useState<NovaTransacao>({ ticker: '', tipo_operacao: 'compra', quantidade: 0, preco_unitario: 0, data_operacao: new Date().toISOString().split('T')[0] })
   const [busca, setBusca] = useState('')
-  const [sugestoes, setSugestoes] = useState<Array<{ ticker: string; nome: string }>>([])
+  const [sugestoes, setSugestoes] = useState<Array<{ ticker: string; nome: string; origem: string }>>([])
   const [mostrarSugestoes, setMostrarSugestoes] = useState(false)
   const [erro, setErro] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
@@ -50,6 +50,7 @@ export default function Transacoes() {
     timerRef.current = setTimeout(async () => {
       try { const r = await searchTickers(busca); setSugestoes(r) } catch (err) { console.warn('Ticker search failed:', err); setSugestoes([]) }
     }, 300)
+    return () => clearTimeout(timerRef.current)
   }, [busca])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -134,6 +135,7 @@ export default function Transacoes() {
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: '#6b7280' }}>Observacao (opcional)</label>
             <input type="text" className={campoBase} style={campoStyle} placeholder="Notas..."
+              value={form.observacao ?? ''}
               onChange={e => setForm(f => ({ ...f, observacao: e.target.value || undefined }))} />
           </div>
 

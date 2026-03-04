@@ -20,6 +20,12 @@ const STEP_LABELS: Record<string, string> = {
   metrics: 'Metricas',
   done: 'Concluido',
   error: 'Erro',
+  warning: 'Aviso',
+  agent_timeout: 'Timeout',
+  ensemble_error: 'Erro ensemble',
+  vram: 'VRAM',
+  diversity: 'Diversidade',
+  feature_importance: 'Features',
 }
 
 interface Props {
@@ -32,11 +38,13 @@ export default function AnalysisLiveWidget({ jobId, onDone }: Props) {
   const [percent, setPercent] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const stableOnDone = useCallback(onDone, [onDone])
 
   useEffect(() => {
     if (!jobId) { setEvents([]); setPercent(0); return }
 
+    clearTimeout(doneTimerRef.current)
     const es = new EventSource(`/api/analises/stream/${jobId}`)
 
     es.onmessage = (e) => {
@@ -44,24 +52,24 @@ export default function AnalysisLiveWidget({ jobId, onDone }: Props) {
       try {
         event = JSON.parse(e.data)
       } catch {
-        setEvents(prev => [...prev, { step: 'error', message: 'Evento SSE malformado recebido.', percent: 0 }])
+        setEvents(prev => [...prev, { step: 'error', message: 'Evento SSE malformado recebido.' }])
         return
       }
       if (event.step === 'heartbeat') return
       setEvents(prev => [...prev.slice(-100), event])
-      if (event.percent > 0) setPercent(event.percent)
+      if (event.percent && event.percent > 0) setPercent(event.percent)
       if (event.step === 'done') {
         es.close()
-        setTimeout(stableOnDone, 3000)
+        doneTimerRef.current = setTimeout(stableOnDone, 3000)
       }
     }
 
     es.onerror = () => {
       es.close()
-      setEvents(prev => [...prev, { step: 'error', message: 'Conexao com o servidor perdida.', percent: 0 }])
+      setEvents(prev => [...prev, { step: 'error', message: 'Conexao com o servidor perdida.' }])
     }
 
-    return () => es.close()
+    return () => { es.close(); clearTimeout(doneTimerRef.current) }
   }, [jobId, stableOnDone])
 
   useEffect(() => {
