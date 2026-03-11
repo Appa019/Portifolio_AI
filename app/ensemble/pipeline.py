@@ -38,11 +38,8 @@ MIN_TEST = 80     # seq_len(60) + 20 margin
 # Zona neutra: |pred| < threshold → direção "neutra" (sem sinal real)
 NEUTRAL_THRESHOLD = 0.001  # 0.1%
 
-CRYPTO_TICKER_MAP = {
-    "bitcoin": "BTC-USD", "ethereum": "ETH-USD", "solana": "SOL-USD",
-    "cardano": "ADA-USD", "polkadot": "DOT-USD", "chainlink": "LINK-USD",
-    "avalanche": "AVAX-USD", "ripple": "XRP-USD",
-}
+# Import from canonical source to avoid duplication with yahoo_scraper.py
+from app.services.yahoo_scraper import CRYPTO_TICKER_MAP  # noqa: E402
 
 # Otimizacoes CUDA
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:512")
@@ -584,6 +581,7 @@ class EnsemblePipeline:
             return {"erro": "Modelo nao treinado. Execute train() primeiro."}
 
         df = self.collect_data(ticker, start="2024-01-01")
+        validate_data_quality(df, ticker=ticker)
         df = create_features(df)
         # NÃO chamar create_target() na inferência — ela remove as últimas `horizon` linhas
         # via dropna(), perdendo o dado mais recente (hoje). Para predict, só precisamos

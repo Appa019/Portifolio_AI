@@ -5,7 +5,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.agents.base_agent import BaseAgent, web_search_tool
+from app.agents.base_agent import BaseAgent, N3_ANALYST_SEMAPHORE, web_search_tool
 from app.services.market_data import VALID_CRYPTO_IDS, get_crypto_trending
 from app.services.portfolio_service import get_portfolio_assets, get_portfolio_summary
 
@@ -134,6 +134,61 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             },
         ]
 
+    def _prefetch_crypto_data(self, crypto_ids: list[str]):
+        """Pre-fetch scraping data para todos os cryptos antes dos N3.
+
+        Usa max_workers=2 para evitar deadlock: cada fetch_one lança
+        instâncias Playwright sequenciais. Com 2 workers, max 2 Playwright
+        simultâneos — dentro do limite de _fresh_browser_semaphore(6).
+        """
+        import time
+
+        from app.database import SessionLocal
+        from app.services.market_data import get_crypto_history, get_crypto_price
+
+        t0 = time.perf_counter()
+
+        def fetch_one(crypto_id: str):
+            ft0 = time.perf_counter()
+            db = SessionLocal()
+            try:
+                get_crypto_price(crypto_id, db)
+                get_crypto_history(crypto_id, "6mo", db)
+                elapsed = time.perf_counter() - ft0
+                logger.info(f"[crypto_agent] Prefetch concluído para {crypto_id} em {elapsed:.1f}s")
+            except Exception:
+                elapsed = time.perf_counter() - ft0
+                logger.exception(f"[crypto_agent] Prefetch falhou para {crypto_id} após {elapsed:.1f}s")
+            finally:
+                db.close()
+
+        # Serial: cada crypto abre browsers para price+history.
+        # Paralelizar causa contention no _fresh_browser_semaphore.
+        for crypto_id in crypto_ids:
+            fetch_one(crypto_id)
+
+        total = time.perf_counter() - t0
+        logger.info(f"[crypto_agent] Prefetch total: {len(crypto_ids)} cryptos em {total:.1f}s")
+
+    def _execute_parallel(self, function_calls: list, job_id: str | None) -> list[dict]:
+        """Override: pre-fetch scraping antes de executar analyze_crypto_deep em paralelo."""
+        deep_calls = [fc for fc in function_calls if fc.name == "analyze_crypto_deep"]
+        if deep_calls:
+            crypto_ids = []
+            for fc in deep_calls:
+                args = json.loads(fc.arguments)
+                crypto_ids.append(args["crypto_id"].strip().lower())
+            if crypto_ids:
+                logger.info(f"[crypto_agent] Pre-fetching dados para {len(crypto_ids)} cryptos: {crypto_ids}")
+                if self._job_id:
+                    from app.ensemble import progress
+                    progress.emit(self._job_id, "prefetch",
+                        f"Buscando dados de mercado para {len(crypto_ids)} criptomoedas...",
+                        agent="crypto_agent")
+                self._prefetch_crypto_data(crypto_ids)
+
+        return super()._execute_parallel(function_calls, job_id)
+
     def execute_function(self, name: str, args: dict) -> str:
         if name == "get_portfolio_summary":
             data = get_portfolio_summary(self.db)
@@ -186,16 +241,21 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
                 f"Iniciando analista N3 para {crypto_id}...",
                 agent=f"crypto_analyst_{crypto_id.lower()}")
 
+        N3_ANALYST_SEMAPHORE.acquire()
         sub_db = SessionLocal()
         try:
             analyst = CryptoAnalyst(sub_db, crypto_id)
             return analyst.analyze(crypto_id, portfolio_context, job_id=self._job_id)
         finally:
             sub_db.close()
+            N3_ANALYST_SEMAPHORE.release()
 
     def analyze(self, portfolio_context: str, job_id: str | None = None) -> str:
         """Executa mapeamento do mercado crypto e delega análises individuais aos N3."""
         self._job_id = job_id
+        # Reset deduplication set each execution to avoid false positives in reuse
+        with self._seen_lock:
+            self._seen_cryptos.clear()
 
         prompt = f"""Mapeie o mercado de criptoativos e identifique as melhores oportunidades.
 

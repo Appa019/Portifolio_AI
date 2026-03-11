@@ -87,7 +87,7 @@ class AtivoPortfolio(BaseModel):
 
 
 class PortfolioEvolucaoItem(BaseModel):
-    data: datetime
+    data: date
     valor_total: float
 
 
@@ -114,7 +114,7 @@ class AnaliseOut(BaseModel):
     tipo_analise: str
     agente: str
     input_resumo: str
-    score_confianca: float | None = None
+    score_confianca: float | None = Field(None, ge=0, le=1, description="Score de confiança (0.0 a 1.0)")
     acao_recomendada: str | None = None
     executada: bool = False
 
@@ -190,5 +190,59 @@ class ConfiguracaoOut(BaseModel):
 
 class ConfiguracaoUpdate(BaseModel):
     configuracoes: dict[str, str]
+
+
+# === Market Data ===
+
+
+class CotacaoOut(BaseModel):
+    ticker: str
+    preco: float
+    variacao_pct: float = 0.0
+    volume: int = 0
+    volume_medio_10d: int = 0
+    market_cap: int = 0
+    nome: str = ""
+    setor: str = ""
+    industria: str = ""
+    exchange: str = ""
+    mercado_aberto: bool = False
+    # Crypto fields (optional)
+    id: str | None = None
+    preco_usd: float | None = None
+    preco_brl: float | None = None
+    variacao_24h_pct: float | None = None
+    market_cap_usd: int | None = None
+    volume_24h: int | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class HistoricoItem(BaseModel):
+    data: str
+    abertura: float | None = None
+    maxima: float | None = None
+    minima: float | None = None
+    fechamento: float | None = None
+    adj_fechamento: float | None = None
+    volume: int | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class TickerSearchResult(BaseModel):
+    ticker: str
+    nome: str
+    origem: str
+
+
+class MacroDataOut(BaseModel):
+    selic: float | None = None
+    cdi: float | None = None
+    ipca_mensal: list[dict] = []
+    ipca_acumulado_12m: float | None = None
+    ptax: float | None = None
+
+    model_config = {"extra": "allow"}
 
 

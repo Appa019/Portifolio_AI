@@ -1,6 +1,6 @@
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+import time
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -19,10 +19,6 @@ from app.services.portfolio_service import (
 
 logger = logging.getLogger(__name__)
 
-# Timeout para sub-agentes (segundos) — 10 min acomoda fila de scraping com semáforo
-_SUB_AGENT_TIMEOUT = 600
-
-
 class Orchestrator(BaseAgent):
     agent_name = "orchestrator"
     model = settings.modelo_orquestrador
@@ -31,24 +27,21 @@ class Orchestrator(BaseAgent):
         super().__init__(db)
         self._job_id = job_id
 
-    def _run_with_timeout(self, fn, agent_label: str, timeout: int = _SUB_AGENT_TIMEOUT) -> str:
-        """Executa função de sub-agente com timeout."""
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fn)
-            try:
-                return future.result(timeout=timeout)
-            except FuturesTimeoutError:
-                logger.error(f"[orchestrator] {agent_label} timeout ({timeout}s)")
-                from app.ensemble import progress
-                progress.emit(self._job_id, "agent_timeout",
-                    f"{agent_label} excedeu timeout de {timeout}s")
-                return json.dumps({"erro": f"{agent_label} timeout ({timeout}s)"})
-            except Exception as e:
-                logger.error(f"[orchestrator] {agent_label} erro: {e}", exc_info=True)
-                from app.ensemble import progress
-                progress.emit(self._job_id, "error",
-                    f"{agent_label} falhou: {type(e).__name__}")
-                return json.dumps({"erro": f"{agent_label} falhou: {e!s}"})
+    def _run_sub_agent(self, fn, agent_label: str) -> str:
+        """Executa função de sub-agente sem timeout — aguarda conclusão."""
+        t0 = time.perf_counter()
+        try:
+            result = fn()
+            elapsed = time.perf_counter() - t0
+            logger.info(f"[orchestrator] {agent_label} concluído em {elapsed:.1f}s")
+            return result
+        except Exception as e:
+            elapsed = time.perf_counter() - t0
+            logger.error(f"[orchestrator] {agent_label} falhou após {elapsed:.1f}s", exc_info=True)
+            from app.ensemble import progress
+            progress.emit(self._job_id, "error",
+                f"{agent_label} falhou: {type(e).__name__}")
+            return json.dumps({"erro": f"{agent_label} falhou: {e!s}"})
 
     def system_prompt(self) -> str:
         hoje = date.today().isoformat()
@@ -250,7 +243,7 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             sub_db = SessionLocal()
             try:
                 agent = B3Agent(sub_db)
-                raw = self._run_with_timeout(
+                raw = self._run_sub_agent(
                     lambda: agent.analyze(ctx, job_id=self._job_id),
                     "B3 Agent",
                 )
@@ -267,7 +260,7 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             sub_db = SessionLocal()
             try:
                 agent = CryptoAgent(sub_db)
-                raw = self._run_with_timeout(
+                raw = self._run_sub_agent(
                     lambda: agent.analyze(ctx, job_id=self._job_id),
                     "Crypto Agent",
                 )
@@ -283,7 +276,7 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             sub_db = SessionLocal()
             try:
                 agent = StatsAgent(sub_db)
-                raw = self._run_with_timeout(
+                raw = self._run_sub_agent(
                     lambda: agent.analyze(args["tickers_context"], job_id=self._job_id),
                     "Stats Agent",
                 )

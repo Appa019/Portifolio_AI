@@ -1,21 +1,24 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.config import settings
 from app.database import Base, SessionLocal, engine, seed_default_configs
+from app.logging_config import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Iniciando aplicação — criando tabelas e configs padrão")
+    logger.info(f"DB: {settings.database_url}")
+    logger.info(f"OPENAI_API_KEY: {'configurada' if settings.openai_api_key else 'AUSENTE'}")
+    logger.info(f"GMAIL: {'configurado' if settings.gmail_user else 'não configurado'}")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
@@ -47,6 +50,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Erro não tratado: {request.method} {request.url.path}")
+    return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor"})
+
 
 # Routers
 from app.routers import (  # noqa: E402

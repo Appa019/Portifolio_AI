@@ -184,7 +184,7 @@ def get_portfolio_evolution(db: Session, periodo: str = "6m") -> list[dict]:
     )
 
     return [
-        {"data": s.data.isoformat(), "valor_total": s.valor_total_brl}
+        {"data": s.data, "valor_total": s.valor_total_brl}
         for s in snapshots
     ]
 

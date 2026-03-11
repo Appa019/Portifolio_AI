@@ -6,7 +6,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.agents.base_agent import BaseAgent, web_search_tool
+from app.agents.base_agent import BaseAgent, N3_ANALYST_SEMAPHORE, web_search_tool
 from app.services.market_data import search_tickers
 from app.services.portfolio_service import get_portfolio_assets, get_portfolio_summary
 
@@ -138,6 +138,69 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
             },
         ]
 
+    def _prefetch_stock_data(self, tickers: list[str]):
+        """Pre-fetch scraping data para todos os tickers antes dos N3.
+
+        Usa max_workers=2 para evitar deadlock: cada fetch_one lança até 4
+        instâncias Playwright sequenciais. Com 2 workers, max 2 Playwright
+        simultâneos — dentro do limite de _fresh_browser_semaphore(6).
+        """
+        import time
+
+        from app.database import SessionLocal
+        from app.services.market_data import (
+            get_stock_dividends,
+            get_stock_fundamentals,
+            get_stock_history,
+            get_stock_price,
+        )
+
+        t0 = time.perf_counter()
+
+        def fetch_one(ticker: str):
+            ft0 = time.perf_counter()
+            db = SessionLocal()
+            try:
+                get_stock_price(ticker, db)
+                get_stock_fundamentals(ticker, db)
+                get_stock_history(ticker, "6mo", db)
+                get_stock_dividends(ticker, db)
+                elapsed = time.perf_counter() - ft0
+                logger.info(f"[b3_agent] Prefetch concluído para {ticker} em {elapsed:.1f}s")
+            except Exception:
+                elapsed = time.perf_counter() - ft0
+                logger.exception(f"[b3_agent] Prefetch falhou para {ticker} após {elapsed:.1f}s")
+            finally:
+                db.close()
+
+        # Serial: cada ticker abre até 3 browsers (fundamentals usa asyncio.gather
+        # com 3 scrape calls). Paralelizar tickers causa contention excessiva
+        # no _fresh_browser_semaphore e resource starvation no Playwright.
+        for ticker in tickers:
+            fetch_one(ticker)
+
+        total = time.perf_counter() - t0
+        logger.info(f"[b3_agent] Prefetch total: {len(tickers)} tickers em {total:.1f}s")
+
+    def _execute_parallel(self, function_calls: list, job_id: str | None) -> list[dict]:
+        """Override: pre-fetch scraping antes de executar analyze_stock_deep em paralelo."""
+        deep_calls = [fc for fc in function_calls if fc.name == "analyze_stock_deep"]
+        if deep_calls:
+            tickers = []
+            for fc in deep_calls:
+                args = json.loads(fc.arguments)
+                tickers.append(args["ticker"].strip().upper())
+            if tickers:
+                logger.info(f"[b3_agent] Pre-fetching dados para {len(tickers)} tickers: {tickers}")
+                if self._job_id:
+                    from app.ensemble import progress
+                    progress.emit(self._job_id, "prefetch",
+                        f"Buscando dados de mercado para {len(tickers)} ações...",
+                        agent="b3_agent")
+                self._prefetch_stock_data(tickers)
+
+        return super()._execute_parallel(function_calls, job_id)
+
     def execute_function(self, name: str, args: dict) -> str:
         if name == "get_portfolio_summary":
             data = get_portfolio_summary(self.db)
@@ -183,16 +246,21 @@ Sempre responda em Português (BR). Seja objetivo e fundamentado."""
                 f"Iniciando analista N3 para {ticker}...",
                 agent=f"ticker_analyst_{ticker.upper()}")
 
+        N3_ANALYST_SEMAPHORE.acquire()
         sub_db = SessionLocal()
         try:
             analyst = TickerAnalyst(sub_db, ticker)
             return analyst.analyze(ticker, portfolio_context, job_id=self._job_id)
         finally:
             sub_db.close()
+            N3_ANALYST_SEMAPHORE.release()
 
     def analyze(self, portfolio_context: str, job_id: str | None = None) -> str:
         """Executa mapeamento do mercado B3 e delega análises individuais aos N3."""
         self._job_id = job_id
+        # Reset deduplication set each execution to avoid false positives in reuse
+        with self._seen_lock:
+            self._seen_tickers.clear()
 
         prompt = f"""Mapeie o mercado brasileiro de ações (B3) e identifique as melhores oportunidades.
 

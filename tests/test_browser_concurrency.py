@@ -2,11 +2,12 @@
 Testes de controle de concorrencia de browsers Chromium.
 
 Valida:
-- Semaforo global em _scrape_fresh() (MAX_FRESH_BROWSERS=10)
+- Semaforo global em _scrape_fresh() (MAX_FRESH_BROWSERS=6)
 - Chromium args de economia de memoria
-- Executor compartilhado em market_data._run_async()
+- Executor compartilhado em market_data._run_async() (max_workers=16)
 - asyncio.Semaphore em scrape_multiple()
-- Timeout do orchestrator (600s)
+- Sub-agente orchestrator sem timeout
+- Pre-fetch scraping em B3Agent e CryptoAgent (override _execute_parallel)
 
 Uso:
   python -m pytest tests/test_browser_concurrency.py -v
@@ -29,8 +30,12 @@ class TestBrowserSemaphore:
             MAX_FRESH_BROWSERS,
             _fresh_browser_semaphore,
         )
-        assert MAX_FRESH_BROWSERS == 10
+        assert MAX_FRESH_BROWSERS == 6
         assert isinstance(_fresh_browser_semaphore, threading.Semaphore)
+
+    def test_n3_analyst_semaphore_exists(self):
+        from app.agents.base_agent import N3_ANALYST_SEMAPHORE
+        assert isinstance(N3_ANALYST_SEMAPHORE, threading.Semaphore)
 
     def test_active_browsers_counter_exists(self):
         from app.services.yahoo_scraper import (
@@ -50,7 +55,6 @@ class TestBrowserSemaphore:
         active = 0
         peak = 0
         lock = threading.Lock()
-        barrier = threading.Barrier(MAX_FRESH_BROWSERS + 5)
 
         def worker():
             nonlocal active, peak
@@ -66,7 +70,7 @@ class TestBrowserSemaphore:
                     active -= 1
                 sem.release()
 
-        threads = [threading.Thread(target=worker) for _ in range(20)]
+        threads = [threading.Thread(target=worker) for _ in range(60)]
         for t in threads:
             t.start()
         for t in threads:
@@ -119,7 +123,7 @@ class TestSharedExecutor:
 
     def test_shared_executor_max_workers(self):
         from app.services.market_data import _shared_executor
-        assert _shared_executor._max_workers == 4
+        assert _shared_executor._max_workers == 16
 
     def test_run_async_uses_shared_executor(self):
         """Verifica que _run_async nao cria executor novo quando loop esta rodando."""
@@ -155,12 +159,22 @@ class TestScrapeMultipleGate:
         assert "MAX_FRESH_BROWSERS" in source
 
 
-class TestOrchestratorTimeout:
-    """Testa o timeout do orchestrator."""
+class TestOrchestratorSubAgent:
+    """Testa execução de sub-agentes do orchestrator."""
 
-    def test_sub_agent_timeout_is_600(self):
-        from app.agents.orchestrator import _SUB_AGENT_TIMEOUT
-        assert _SUB_AGENT_TIMEOUT == 600
+    def test_run_sub_agent_exists(self):
+        from app.agents.orchestrator import Orchestrator
+        assert hasattr(Orchestrator, "_run_sub_agent")
+
+
+class TestOpenAIClientSingleton:
+    """Testa que o OpenAI client é reutilizado entre agentes."""
+
+    def test_singleton_client(self):
+        from app.agents.base_agent import _get_openai_client
+        c1 = _get_openai_client()
+        c2 = _get_openai_client()
+        assert c1 is c2
 
 
 class TestSemaphoreSlotRelease:
@@ -200,3 +214,64 @@ class TestSemaphoreSlotRelease:
         # Deve poder adquirir novamente
         assert sem.acquire(blocking=False)
         sem.release()
+
+
+class TestPrefetchOverride:
+    """Testa que B3Agent e CryptoAgent fazem prefetch antes dos N3."""
+
+    def test_b3_agent_has_prefetch_method(self):
+        from app.agents.b3_agent import B3Agent
+        assert hasattr(B3Agent, '_prefetch_stock_data')
+        assert hasattr(B3Agent, '_execute_parallel')
+
+    def test_crypto_agent_has_prefetch_method(self):
+        from app.agents.crypto_agent import CryptoAgent
+        assert hasattr(CryptoAgent, '_prefetch_crypto_data')
+        assert hasattr(CryptoAgent, '_execute_parallel')
+
+    def test_b3_prefetch_calls_market_data(self):
+        """Verifica que _prefetch_stock_data chama as 4 funções de scraping."""
+        from app.agents.b3_agent import B3Agent
+
+        with patch('app.database.SessionLocal') as mock_session_cls, \
+             patch('app.services.market_data.get_stock_price') as mock_price, \
+             patch('app.services.market_data.get_stock_fundamentals') as mock_fund, \
+             patch('app.services.market_data.get_stock_history') as mock_hist, \
+             patch('app.services.market_data.get_stock_dividends') as mock_div:
+            mock_db = MagicMock()
+            mock_session_cls.return_value = mock_db
+            agent = B3Agent.__new__(B3Agent)
+            agent._prefetch_stock_data(["PETR4", "VALE3"])
+            assert mock_price.call_count == 2
+            assert mock_fund.call_count == 2
+            assert mock_hist.call_count == 2
+            assert mock_div.call_count == 2
+            assert mock_db.close.call_count == 2
+
+    def test_crypto_prefetch_calls_market_data(self):
+        """Verifica que _prefetch_crypto_data chama as 2 funções de scraping."""
+        from app.agents.crypto_agent import CryptoAgent
+
+        with patch('app.database.SessionLocal') as mock_session_cls, \
+             patch('app.services.market_data.get_crypto_price') as mock_price, \
+             patch('app.services.market_data.get_crypto_history') as mock_hist:
+            mock_db = MagicMock()
+            mock_session_cls.return_value = mock_db
+            agent = CryptoAgent.__new__(CryptoAgent)
+            agent._prefetch_crypto_data(["bitcoin", "ethereum"])
+            assert mock_price.call_count == 2
+            assert mock_hist.call_count == 2
+            assert mock_db.close.call_count == 2
+
+    def test_n3_semaphore_increased_for_prefetch(self):
+        """N3 semaphore deve ser >= 7 (N3 não faz scraping com prefetch)."""
+        from app.agents.base_agent import N3_ANALYST_SEMAPHORE
+        # Verificar que pelo menos 7 slots estão disponíveis
+        acquired = 0
+        for _ in range(7):
+            got = N3_ANALYST_SEMAPHORE.acquire(blocking=False)
+            if got:
+                acquired += 1
+        for _ in range(acquired):
+            N3_ANALYST_SEMAPHORE.release()
+        assert acquired == 7

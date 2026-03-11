@@ -8,7 +8,8 @@ from app.services.market_data import get_ptax
 
 logger = logging.getLogger(__name__)
 
-# Preços por 1M tokens (USD)
+# Preços por 1M tokens (USD) — atualizado: 2026-03-11
+# ATENÇÃO: atualizar manualmente se OpenAI alterar preços
 PRICING = {
     "gpt-5.2": {"input": 1.75, "output": 14.00},
     "gpt-5.1": {"input": 1.25, "output": 10.00},
@@ -17,6 +18,11 @@ PRICING = {
 
 
 def calculate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    if model not in PRICING:
+        logger.warning(
+            f"Modelo '{model}' sem pricing definido — usando fallback gpt-5.1. "
+            "Custo USD pode estar incorreto. Adicione o modelo em PRICING em token_cost.py."
+        )
     pricing = PRICING.get(model, PRICING["gpt-5.1"])
     return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
@@ -48,9 +54,9 @@ def log_token_cost(
     try:
         db.commit()
         db.refresh(entry)
-    except Exception as e:
+    except Exception:
         db.rollback()
-        logger.warning(f"Falha ao salvar custo de tokens ({agente}/{modelo}): {e}")
+        logger.exception(f"Falha ao salvar custo de tokens ({agente}/{modelo})")
         return entry
 
     logger.info(

@@ -315,24 +315,23 @@ class TestTimeout:
 
         logger.info("T4 PASS — timeout dispara corretamente")
 
-    def test_orchestrator_timeout_wrapper(self, db_session):
-        """Orchestrator._run_with_timeout retorna erro em timeout."""
+    def test_orchestrator_sub_agent_error_handling(self, db_session):
+        """Orchestrator._run_sub_agent captura exceções e retorna erro JSON."""
         from app.agents.orchestrator import Orchestrator
 
         orch = Orchestrator(db_session)
-        orch._job_id = "test-timeout"
+        orch._job_id = "test-error"
 
-        def slow_fn():
-            time.sleep(5)
-            return "tarde demais"
+        def failing_fn():
+            raise RuntimeError("algo deu errado")
 
         with patch("app.ensemble.progress.emit"):
-            result = orch._run_with_timeout(slow_fn, "SlowAgent", timeout=1)
+            result = orch._run_sub_agent(failing_fn, "FailAgent")
 
         parsed = json.loads(result)
         assert "erro" in parsed
-        assert "timeout" in parsed["erro"].lower()
-        logger.info(f"T4b PASS — _run_with_timeout retornou: {parsed}")
+        assert "algo deu errado" in parsed["erro"]
+        logger.info(f"T4b PASS — _run_sub_agent capturou erro: {parsed}")
 
 
 # ─── T5: Execução paralela de function_calls ─────────────────────────────────

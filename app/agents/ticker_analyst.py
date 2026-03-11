@@ -140,20 +140,29 @@ Sempre responda em Português (BR). Seja profundo e fundamentado."""
         ]
 
     def execute_function(self, name: str, args: dict) -> str:
+        # Cada function call pode rodar em thread separada via _execute_parallel,
+        # então cria session própria para evitar sqlite3.InterfaceError
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            return self._exec_with_db(name, args, db)
+        finally:
+            db.close()
+
+    def _exec_with_db(self, name: str, args: dict, db) -> str:
         if name == "get_stock_price":
-            data = get_stock_price(args["ticker"], self.db)
+            data = get_stock_price(args["ticker"], db)
             return json.dumps(data or {"erro": "Dados não disponíveis"}, ensure_ascii=False, default=str)
 
         if name == "get_stock_fundamentals":
-            data = get_stock_fundamentals(args["ticker"], self.db)
+            data = get_stock_fundamentals(args["ticker"], db)
             return json.dumps(data or {"erro": "Dados não disponíveis"}, ensure_ascii=False, default=str)
 
         if name == "get_stock_history":
-            data = get_stock_history(args["ticker"], args.get("period", "1y"), self.db)
+            data = get_stock_history(args["ticker"], args.get("period", "1y"), db)
             if not data:
                 return json.dumps({"erro": "Dados não disponíveis"})
             if len(data) > 60:
-                # Enviar todos os fechamentos (~252 números, ~2K tokens) para análise técnica completa
                 return json.dumps({
                     "total_registros": len(data),
                     "fechamentos": [d["fechamento"] for d in data],
@@ -163,7 +172,7 @@ Sempre responda em Português (BR). Seja profundo e fundamentado."""
             return json.dumps(data, ensure_ascii=False, default=str)
 
         if name == "get_stock_dividends":
-            data = get_stock_dividends(args["ticker"], self.db)
+            data = get_stock_dividends(args["ticker"], db)
             return json.dumps(data or [], ensure_ascii=False, default=str)
 
         return json.dumps({"erro": f"Função desconhecida: {name}"})

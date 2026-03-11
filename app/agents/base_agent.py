@@ -1,17 +1,25 @@
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime
+
+import threading
 
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.logging_config import set_job_id
 from app.models.db_models import AgentContext, AnaliseIA
 from app.services.token_cost import log_token_cost
 
 logger = logging.getLogger(__name__)
+
+# Limita N3 analysts simultâneos. Com pre-fetch, N3 não lança browsers (só cache hits + OpenAI).
+# 7 permite todos os analysts de um N2 rodarem em paralelo.
+N3_ANALYST_SEMAPHORE = threading.Semaphore(7)
 
 # user_location compartilhado por todos os agentes
 _USER_LOCATION = {
@@ -20,6 +28,19 @@ _USER_LOCATION = {
     "city": "São Paulo",
     "timezone": "America/Sao_Paulo",
 }
+
+# Singleton OpenAI client — reutilizado por todos os agentes (connection pooling)
+_openai_client: OpenAI | None = None
+_openai_lock = threading.Lock()
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        with _openai_lock:
+            if _openai_client is None:
+                _openai_client = OpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 
 def web_search_tool(context_size: str = "medium") -> dict:
@@ -48,7 +69,7 @@ class BaseAgent(ABC):
 
     def __init__(self, db: Session):
         self.db = db
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = _get_openai_client()
         self._total_input_tokens = 0
         self._total_output_tokens = 0
 
@@ -70,6 +91,9 @@ class BaseAgent(ABC):
         Pattern A (oficial OpenAI): input_list acumulada entre rounds.
         previous_response_id usado APENAS no round 0 para continuidade cross-execution.
         """
+        t0 = time.perf_counter()
+        set_job_id(job_id)
+
         tools = self.get_tools()
         context = self._load_context()
         # previous_response_id só para continuidade cross-execution (round 0)
@@ -96,6 +120,8 @@ class BaseAgent(ABC):
             effort_key = self.agent_name
         effort = settings.reasoning_effort.get(effort_key, "none")
 
+        logger.info(f"[{self.agent_name}] call_model iniciado (model={self.model}, effort={effort})")
+
         for round_num in range(max_rounds):
             logger.info(f"[{self.agent_name}] Round {round_num + 1}/{max_rounds}")
 
@@ -118,6 +144,7 @@ class BaseAgent(ABC):
             if round_num == 0 and cross_exec_prev_id:
                 kwargs["previous_response_id"] = cross_exec_prev_id
 
+            t_api = time.perf_counter()
             try:
                 response = self.client.responses.create(**kwargs)
             except Exception as e:
@@ -133,6 +160,7 @@ class BaseAgent(ABC):
                     response = self.client.responses.create(**kwargs)
                 else:
                     raise
+            api_elapsed = time.perf_counter() - t_api
 
             last_response_id = response.id
 
@@ -140,6 +168,10 @@ class BaseAgent(ABC):
             if response.usage:
                 self._total_input_tokens += response.usage.input_tokens
                 self._total_output_tokens += response.usage.output_tokens
+                logger.info(
+                    f"[{self.agent_name}] Round {round_num + 1} API: {api_elapsed:.1f}s | "
+                    f"tokens in={response.usage.input_tokens} out={response.usage.output_tokens}"
+                )
 
             # Check for function calls
             function_calls = [item for item in response.output if item.type == "function_call"]
@@ -149,7 +181,16 @@ class BaseAgent(ABC):
                 final_text = response.output_text or ""
                 self._save_context(last_response_id, resumo=final_text[:2000])
                 self._log_costs()
+                elapsed = time.perf_counter() - t0
+                logger.info(
+                    f"[{self.agent_name}] call_model concluído em {elapsed:.1f}s | "
+                    f"{round_num + 1} rounds | tokens total in={self._total_input_tokens} out={self._total_output_tokens}"
+                )
                 return final_text
+
+            # Log function calls recebidas
+            fc_names = [fc.name for fc in function_calls]
+            logger.info(f"[{self.agent_name}] Round {round_num + 1} function_calls: {fc_names}")
 
             # Pattern A: acumular TODOS os output items (incluindo reasoning)
             input_list = input_list + list(response.output)
@@ -166,23 +207,30 @@ class BaseAgent(ABC):
         final_text = response.output_text or ""
         self._save_context(last_response_id, resumo=final_text[:2000])
         self._log_costs()
-        logger.warning(f"[{self.agent_name}] max_rounds atingido ({max_rounds})")
+        elapsed = time.perf_counter() - t0
+        logger.warning(f"[{self.agent_name}] max_rounds atingido ({max_rounds}) após {elapsed:.1f}s")
         return final_text
 
     def _execute_one_function(self, fc_item, job_id: str | None) -> dict:
         """Executa uma function_call e retorna o function_call_output dict."""
+        set_job_id(job_id)
+
         if job_id:
             from app.ensemble import progress
             progress.emit(job_id, "function_call",
                 f"[{self.agent_name}] Executando: {fc_item.name}",
                 agent=self.agent_name, function=fc_item.name)
 
+        t0 = time.perf_counter()
         try:
             args = json.loads(fc_item.arguments)
             result = self.execute_function(fc_item.name, args)
-        except Exception as e:
-            logger.error(f"[{self.agent_name}] Erro executando {fc_item.name}: {e}")
-            result = json.dumps({"erro": str(e)})
+        except Exception:
+            logger.exception(f"[{self.agent_name}] Erro executando {fc_item.name}")
+            result = json.dumps({"erro": "Erro interno na execução da função"})
+
+        elapsed = time.perf_counter() - t0
+        logger.info(f"[{self.agent_name}] {fc_item.name} concluído em {elapsed:.1f}s")
 
         output = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str)
         return {"type": "function_call_output", "call_id": fc_item.call_id, "output": output}
@@ -198,7 +246,7 @@ class BaseAgent(ABC):
         sub-agentes (como analyze_stock_deep), cada sub-agente deve criar sua
         própria session via SessionLocal() para thread-safety.
         """
-        max_workers = min(len(function_calls), 4)
+        max_workers = min(len(function_calls), 20)
         results: dict[str, dict] = {}  # call_id → fco dict
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -210,12 +258,12 @@ class BaseAgent(ABC):
                 call_id = futures[future]
                 try:
                     results[call_id] = future.result()
-                except Exception as e:
-                    logger.error(f"[{self.agent_name}] Parallel exec error ({call_id}): {e}")
+                except Exception:
+                    logger.exception(f"[{self.agent_name}] Parallel exec error ({call_id})")
                     results[call_id] = {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": json.dumps({"erro": str(e)}),
+                        "output": json.dumps({"erro": "Erro interno na execução paralela"}),
                     }
 
         # G7: Agregar erros e emitir warning se maioria falhou
@@ -248,9 +296,10 @@ class BaseAgent(ABC):
         try:
             self.db.commit()
             self.db.refresh(analise)
-        except Exception as e:
+        except Exception:
             self.db.rollback()
-            logger.warning(f"[{self.agent_name}] Falha ao salvar análise: {e}")
+            logger.exception(f"[{self.agent_name}] Falha ao salvar análise — resultado NÃO persistido")
+            raise
         return analise
 
     def _load_context(self) -> AgentContext | None:
@@ -275,9 +324,9 @@ class BaseAgent(ABC):
             self.db.add(ctx)
         try:
             self.db.commit()
-        except Exception as e:
+        except Exception:
             self.db.rollback()
-            logger.warning(f"[{self.agent_name}] Falha ao salvar contexto: {e}")
+            logger.exception(f"[{self.agent_name}] Falha ao salvar contexto")
 
     def _log_costs(self):
         if self._total_input_tokens > 0 or self._total_output_tokens > 0:

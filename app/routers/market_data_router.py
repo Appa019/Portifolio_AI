@@ -3,6 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.db_models import Ativo
+from app.schemas.api_schemas import (
+    CotacaoOut,
+    HistoricoItem,
+    MacroDataOut,
+    TickerSearchResult,
+)
 from app.services.market_data import (
     get_crypto_history,
     get_crypto_price,
@@ -197,7 +203,7 @@ _CRYPTO_TICKERS: dict[str, str] = {
 router = APIRouter(prefix="/market", tags=["Dados de Mercado"])
 
 
-@router.get("/cotacao/{ticker}")
+@router.get("/cotacao/{ticker}", response_model=CotacaoOut)
 def cotacao(ticker: str, db: Session = Depends(get_db)):
     if is_crypto(ticker):
         data = get_crypto_price(to_crypto_id(ticker), db)
@@ -208,7 +214,7 @@ def cotacao(ticker: str, db: Session = Depends(get_db)):
     return data
 
 
-@router.get("/historico/{ticker}")
+@router.get("/historico/{ticker}", response_model=list[HistoricoItem])
 def historico(
     ticker: str,
     periodo: str = Query("1y", pattern="^(1mo|3mo|6mo|1y|2y|5y|max)$"),
@@ -223,7 +229,7 @@ def historico(
     return data
 
 
-@router.get("/search")
+@router.get("/search", response_model=list[TickerSearchResult])
 def buscar(
     q: str = Query(..., min_length=1),
     tipo: str | None = Query(None, pattern="^(acao|crypto)$"),
@@ -266,6 +272,6 @@ def buscar(
     return results
 
 
-@router.get("/macro")
+@router.get("/macro", response_model=MacroDataOut)
 def macro(db: Session = Depends(get_db)):
     return get_macro_data(db)

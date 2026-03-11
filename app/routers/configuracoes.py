@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.db_models import Configuracao
 from app.schemas.api_schemas import ConfiguracaoOut, ConfiguracaoUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/configuracoes", tags=["Configurações"])
 
@@ -24,6 +28,7 @@ def atualizar(payload: ConfiguracaoUpdate, db: Session = Depends(get_db)):
     try:
         db.commit()
     except Exception:
+        logger.exception("Commit falhou ao salvar configurações")
         db.rollback()
         raise HTTPException(status_code=500, detail="Erro ao salvar configurações")
     return db.query(Configuracao).order_by(Configuracao.chave).all()

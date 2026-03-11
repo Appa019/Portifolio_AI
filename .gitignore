@@ -9,5 +9,6 @@ portfolio.db-shm
 checkpoints/
 lightning_logs/
 dist/
+logs/
 .pytest_cache/
 .playwright-mcp/

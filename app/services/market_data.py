@@ -73,8 +73,10 @@ def _fill_none(d: dict, defaults: dict | None = None) -> dict:
 
 
 # Executor compartilhado — evita criar ThreadPoolExecutor novo por chamada
+# max_workers=16: acomoda 3 N3 analysts × 4 scraping calls + margem
+# (browser concurrency controlada separadamente pelo _fresh_browser_semaphore=6)
 _shared_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="scraper"
+    max_workers=16, thread_name_prefix="scraper"
 )
 atexit.register(_shared_executor.shutdown, wait=False)
 
@@ -87,8 +89,10 @@ def _run_async(coro):
         loop = None
 
     if loop and loop.is_running():
-        return _shared_executor.submit(asyncio.run, coro).result()
+        logger.debug(f"_run_async: using _shared_executor (thread={threading.current_thread().name})")
+        return _shared_executor.submit(asyncio.run, coro).result(timeout=120)
     else:
+        logger.debug(f"_run_async: using asyncio.run directly (thread={threading.current_thread().name})")
         return asyncio.run(coro)
 
 
@@ -552,7 +556,25 @@ def get_ptax() -> float:
     except Exception as e:
         logger.warning(f"Erro ao buscar PTAX: {e}")
         with _ptax_lock:
-            return _ptax_cache if _ptax_cache is not None else 5.50
+            if _ptax_cache is not None:
+                return _ptax_cache
+        # Tentar último valor do cache DB antes do fallback hardcoded
+        try:
+            from app.database import SessionLocal
+            db_fallback = SessionLocal()
+            try:
+                cached = _get_cache(db_fallback, "brasil", "bcb", "macro")
+                if cached and cached.get("ptax"):
+                    return float(cached["ptax"])
+            finally:
+                db_fallback.close()
+        except Exception:
+            pass
+        logger.critical(
+            "PTAX: todos os fallbacks falharam — usando valor hardcoded R$5,50. "
+            "Custos em BRL no dashboard podem estar incorretos (BCB API indisponível)."
+        )
+        return 5.50
 
 
 def get_bcb_historical_series(series_id: int, start_date: str = "2015-01-01") -> pd.Series:

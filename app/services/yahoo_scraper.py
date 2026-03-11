@@ -52,7 +52,7 @@ RATE_LIMIT_PER_MIN = 30
 # === Controle de concorrência de browsers ===
 # Limita browsers Chromium simultâneos em toda a aplicação.
 # threading.Semaphore porque _run_async() cria event loops separados por thread.
-MAX_FRESH_BROWSERS = 10
+MAX_FRESH_BROWSERS = 6
 _fresh_browser_semaphore = threading.Semaphore(MAX_FRESH_BROWSERS)
 _active_browsers = 0
 _active_browsers_lock = threading.Lock()

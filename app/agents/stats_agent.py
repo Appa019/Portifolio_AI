@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import traceback
 from datetime import date
 
@@ -75,6 +76,7 @@ class StatsAgent(BaseAgent):
         self._pipelines: dict[str, "EnsemblePipeline"] = {}  # cache por ticker
         self._trained_tickers: set[str] = set()
         self._predicted_tickers: set[str] = set()
+        self._ticker_lock = threading.Lock()
 
     def system_prompt(self) -> str:
         hoje = date.today().isoformat()
@@ -224,11 +226,22 @@ Sempre responda em Português (BR)."""
         ]
 
     def execute_function(self, name: str, args: dict) -> str:
+        # Funções de market_data podem rodar em threads paralelas via _execute_parallel,
+        # então usam session própria para evitar sqlite3.InterfaceError
+        if name in ("get_stock_history", "get_crypto_history", "get_macro_data"):
+            from app.database import SessionLocal
+            db = SessionLocal()
+            try:
+                return self._exec_market_data(name, args, db)
+            finally:
+                db.close()
+        return self._exec_market_data(name, args, None)
+
+    def _exec_market_data(self, name: str, args: dict, db) -> str:
         if name == "get_stock_history":
-            data = get_stock_history(args["ticker"], args.get("period", "1y"), self.db)
+            data = get_stock_history(args["ticker"], args.get("period", "1y"), db)
             if not data:
                 return json.dumps({"erro": "Dados não disponíveis"})
-            # Retornar preços de fechamento para análise
             return json.dumps({
                 "ticker": args["ticker"],
                 "periodo": args.get("period", "1y"),
@@ -239,7 +252,7 @@ Sempre responda em Português (BR)."""
             }, ensure_ascii=False, default=str)
 
         if name == "get_crypto_history":
-            data = get_crypto_history(args["crypto_id"], args.get("period", "1y"), self.db)
+            data = get_crypto_history(args["crypto_id"], args.get("period", "1y"), db)
             if not data:
                 return json.dumps({"erro": "Dados não disponíveis"})
             return json.dumps({
@@ -252,7 +265,7 @@ Sempre responda em Português (BR)."""
             }, ensure_ascii=False, default=str)
 
         if name == "get_macro_data":
-            data = get_macro_data(self.db)
+            data = get_macro_data(db)
             return json.dumps(data, ensure_ascii=False, default=str)
 
         if name == "calculate_stats":
@@ -277,13 +290,14 @@ Sempre responda em Português (BR)."""
     def _handle_train_ensemble(self, ticker: str) -> str:
         from app.ensemble import progress
 
-        # G6: Deduplicação de treino
+        # G6: Deduplicação de treino (thread-safe)
         ticker = ticker.strip().upper()
-        if ticker in self._trained_tickers:
-            logger.info(f"[stats_agent] Treino duplicado ignorado: {ticker}")
-            return json.dumps({"status": "cache", "ticker": ticker,
-                "mensagem": f"{ticker} já treinado nesta execução"})
-        self._trained_tickers.add(ticker)
+        with self._ticker_lock:
+            if ticker in self._trained_tickers:
+                logger.info(f"[stats_agent] Treino duplicado ignorado: {ticker}")
+                return json.dumps({"status": "cache", "ticker": ticker,
+                    "mensagem": f"{ticker} já treinado nesta execução"})
+            self._trained_tickers.add(ticker)
 
         try:
             pipeline = self._get_pipeline(ticker)
@@ -340,13 +354,14 @@ Sempre responda em Português (BR)."""
     def _handle_predict_ensemble(self, ticker: str) -> str:
         from app.ensemble import progress
 
-        # G6: Deduplicação de predict
+        # G6: Deduplicação de predict (thread-safe)
         ticker = ticker.strip().upper()
-        if ticker in self._predicted_tickers:
-            logger.info(f"[stats_agent] Predict duplicado ignorado: {ticker}")
-            return json.dumps({"status": "cache", "ticker": ticker,
-                "mensagem": f"{ticker} já previsto nesta execução"})
-        self._predicted_tickers.add(ticker)
+        with self._ticker_lock:
+            if ticker in self._predicted_tickers:
+                logger.info(f"[stats_agent] Predict duplicado ignorado: {ticker}")
+                return json.dumps({"status": "cache", "ticker": ticker,
+                    "mensagem": f"{ticker} já previsto nesta execução"})
+            self._predicted_tickers.add(ticker)
 
         try:
             pipeline = self._get_pipeline(ticker)
@@ -388,6 +403,11 @@ Sempre responda em Português (BR)."""
     def analyze(self, tickers_context: str, job_id: str | None = None) -> str:
         """Executa análise estatística dos tickers fornecidos."""
         self._job_id = job_id
+        # Clear per-execution caches to prevent VRAM leak across weekly runs
+        with self._ticker_lock:
+            self._trained_tickers.clear()
+            self._predicted_tickers.clear()
+        self._pipelines.clear()
 
         prompt = f"""Realize análise quantitativa dos seguintes ativos:
 

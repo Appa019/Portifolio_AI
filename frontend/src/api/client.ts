@@ -185,7 +185,7 @@ export const executarAnaliseAporte = (valor: number) =>
 export const getAlertas = (lido?: boolean) =>
   api.get<Alerta[]>('/alertas/', { params: lido !== undefined ? { lido } : {} }).then(r => r.data)
 export const marcarAlertaLido = (id: number) =>
-  api.patch(`/alertas/${id}/marcar-lido`).then(r => r.data)
+  api.patch<Alerta>(`/alertas/${id}/marcar-lido`).then(r => r.data)
 
 export const getCustos = () => api.get<CustoToken[]>('/custos/').then(r => r.data)
 export const getCustosResumo = () => api.get<CustoResumo>('/custos/resumo').then(r => r.data)

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PlusCircle, Search, ArrowLeftRight } from 'lucide-react'
+import type { AxiosError } from 'axios'
 import { getTransacoes, criarTransacao, searchTickers, formatBRL, formatData } from '../api/client'
 import type { NovaTransacao } from '../api/client'
 import { useToast } from '../components/ui/Toast'
@@ -38,9 +39,9 @@ export default function Transacoes() {
       setForm({ ticker: '', tipo_operacao: 'compra', quantidade: 0, preco_unitario: 0, data_operacao: new Date().toISOString().split('T')[0] })
       setBusca('')
     },
-    onError: (e: any) => {
+    onError: (e: AxiosError<{ detail: string | Array<{ msg: string }> }>) => {
       const detail = e?.response?.data?.detail
-      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao registrar transacao'
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : 'Erro ao registrar transacao'
       setErro(msg)
       toast(msg, 'error')
     },

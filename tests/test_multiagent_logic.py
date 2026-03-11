@@ -569,7 +569,7 @@ class TestIntegrationOrchestrator:
 
             orch = Orchestrator(db_session)
             # Mock sub-agentes para nao executar analises reais
-            orch._run_with_timeout = MagicMock(
+            orch._run_sub_agent = MagicMock(
                 return_value='{"status":"ok","acoes_recomendadas":[]}'
             )
 

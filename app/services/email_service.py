@@ -42,8 +42,8 @@ async def send_email(subject: str, html_body: str, to: str | None = None):
         )
         logger.info(f"Email enviado: {subject} → {destinatario}")
         return True
-    except Exception as e:
-        logger.error(f"Erro ao enviar email: {e}")
+    except Exception:
+        logger.exception(f"Erro ao enviar email: {subject} → {destinatario}")
         return False
 
 
@@ -53,6 +53,6 @@ async def send_weekly_report(data: dict):
         template = env.get_template("relatorio_semanal.html")
         html = template.render(**data)
         return await send_email("📊 Relatório Semanal — Portfólio de Investimentos", html)
-    except Exception as e:
-        logger.error(f"Erro ao renderizar relatório: {e}")
+    except Exception:
+        logger.exception("Erro ao renderizar relatório semanal")
         return False

@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.db_models import Alerta
 from app.schemas.api_schemas import AlertaOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/alertas", tags=["Alertas"])
 
@@ -32,6 +36,7 @@ def marcar_lido(alerta_id: int, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(alerta)
     except Exception:
+        logger.exception(f"Commit falhou ao marcar alerta {alerta_id} como lido")
         db.rollback()
         raise HTTPException(status_code=500, detail="Erro ao atualizar alerta")
     return alerta

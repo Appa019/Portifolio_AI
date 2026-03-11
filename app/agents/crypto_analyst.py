@@ -105,16 +105,25 @@ Sempre responda em Português (BR). Seja profundo e fundamentado."""
         ]
 
     def execute_function(self, name: str, args: dict) -> str:
+        # Cada function call pode rodar em thread separada via _execute_parallel,
+        # então cria session própria para evitar sqlite3.InterfaceError
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            return self._exec_with_db(name, args, db)
+        finally:
+            db.close()
+
+    def _exec_with_db(self, name: str, args: dict, db) -> str:
         if name == "get_crypto_price":
-            data = get_crypto_price(args["crypto_id"], self.db)
+            data = get_crypto_price(args["crypto_id"], db)
             return json.dumps(data or {"erro": "Dados não disponíveis"}, ensure_ascii=False, default=str)
 
         if name == "get_crypto_history":
-            data = get_crypto_history(args["crypto_id"], args.get("period", "1y"), self.db)
+            data = get_crypto_history(args["crypto_id"], args.get("period", "1y"), db)
             if not data:
                 return json.dumps({"erro": "Dados não disponíveis"})
             if len(data) > 60:
-                # Enviar todos os fechamentos para análise técnica completa
                 return json.dumps({
                     "total_registros": len(data),
                     "fechamentos": [d["fechamento"] for d in data],

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { BrainCircuit, Play, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import type { AxiosError } from 'axios'
 import { getAnalises, getAnalise, executarAnalise, executarAnaliseAporte, formatDataHora } from '../api/client'
 import type { ExecutarResponse } from '../api/client'
 import { useToast } from '../components/ui/Toast'
@@ -28,9 +29,9 @@ export default function Analises() {
       notifyDashboard(data.job_id)
       qc.invalidateQueries({ queryKey: ['analises'] })
     },
-    onError: (e: any) => {
+    onError: (e: AxiosError<{ detail: string | Array<{ msg: string }> }>) => {
       const detail = e?.response?.data?.detail
-      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao disparar analise'
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : 'Erro ao disparar analise'
       toast(msg, 'error')
     },
   })
@@ -42,9 +43,9 @@ export default function Analises() {
       notifyDashboard(data.job_id)
       qc.invalidateQueries({ queryKey: ['analises'] })
     },
-    onError: (e: any) => {
+    onError: (e: AxiosError<{ detail: string | Array<{ msg: string }> }>) => {
       const detail = e?.response?.data?.detail
-      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Erro ao disparar analise de aporte'
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : 'Erro ao disparar analise de aporte'
       toast(msg, 'error')
     },
   })

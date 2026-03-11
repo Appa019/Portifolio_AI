@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,6 +20,7 @@ def atualizar_precos():
     from app.services.market_data import get_crypto_price, get_stock_price, to_crypto_id
     from app.services.portfolio_service import create_snapshot, get_posicoes
 
+    t0 = time.perf_counter()
     logger.info("[scheduler] Atualizando preços...")
     db = SessionLocal()
     try:
@@ -30,15 +32,17 @@ def atualizar_precos():
             elif ativo.tipo == "crypto":
                 get_crypto_price(to_crypto_id(ativo.ticker), db)
         create_snapshot(db)
-        logger.info(f"[scheduler] Preços atualizados para {len(posicoes)} ativos")
-    except Exception as e:
-        logger.error(f"[scheduler] Erro atualizando preços: {e}")
+        elapsed = time.perf_counter() - t0
+        logger.info(f"[scheduler] Preços atualizados para {len(posicoes)} ativos em {elapsed:.1f}s")
+    except Exception:
+        logger.exception("[scheduler] Erro atualizando preços")
     finally:
         db.close()
 
 
 def verificar_lockups():
     """Diário 08:00: verifica lockups completados e gera alertas."""
+    t0 = time.perf_counter()
     logger.info("[scheduler] Verificando lockups...")
     db = SessionLocal()
     try:
@@ -56,24 +60,25 @@ def verificar_lockups():
             .all()
         )
 
+        # Pre-load IDs de transações já alertadas (O(M) uma vez, não O(N*M))
+        existing_alertas = (
+            db.query(Alerta)
+            .filter(Alerta.tipo == "lockup_expirado")
+            .all()
+        )
+        alerted_ids: set[int] = set()
+        for a in existing_alertas:
+            if a.dados_json:
+                try:
+                    dados = json.loads(a.dados_json)
+                    tid = dados.get("transacao_id")
+                    if tid is not None:
+                        alerted_ids.add(tid)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
         for t in transacoes:
-            # Verificar se já existe alerta para essa transação (parse JSON seguro)
-            existing_alertas = (
-                db.query(Alerta)
-                .filter(Alerta.tipo == "lockup_expirado")
-                .all()
-            )
-            already_alerted = False
-            for a in existing_alertas:
-                if a.dados_json:
-                    try:
-                        dados = json.loads(a.dados_json)
-                        if dados.get("transacao_id") == t.id:
-                            already_alerted = True
-                            break
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-            if already_alerted:
+            if t.id in alerted_ids:
                 continue
 
             alerta = Alerta(
@@ -89,15 +94,18 @@ def verificar_lockups():
             logger.info(f"[scheduler] Alerta lockup: {t.ativo.ticker}")
 
         db.commit()
-    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        logger.info(f"[scheduler] Lockups verificados em {elapsed:.1f}s")
+    except Exception:
         db.rollback()
-        logger.error(f"[scheduler] Erro verificando lockups: {e}")
+        logger.exception("[scheduler] Erro verificando lockups")
     finally:
         db.close()
 
 
 def rodar_analise_semanal():
     """Segunda 07:00: executa análise completa via Orchestrator."""
+    t0 = time.perf_counter()
     logger.info("[scheduler] Iniciando análise semanal...")
     db = SessionLocal()
     try:
@@ -105,15 +113,17 @@ def rodar_analise_semanal():
 
         orch = Orchestrator(db)
         orch.run_full_analysis()
-        logger.info("[scheduler] Análise semanal concluída")
-    except Exception as e:
-        logger.error(f"[scheduler] Erro na análise semanal: {e}")
+        elapsed = time.perf_counter() - t0
+        logger.info(f"[scheduler] Análise semanal concluída em {elapsed:.1f}s")
+    except Exception:
+        logger.exception("[scheduler] Erro na análise semanal")
     finally:
         db.close()
 
 
 def enviar_email_semanal():
     """Segunda 10:00: envia email com relatório semanal."""
+    t0 = time.perf_counter()
     logger.info("[scheduler] Preparando email semanal...")
     db = SessionLocal()
     try:
@@ -169,9 +179,10 @@ def enviar_email_semanal():
         }
 
         asyncio.run(send_weekly_report(data))
-        logger.info("[scheduler] Email semanal enviado")
-    except Exception as e:
-        logger.error(f"[scheduler] Erro enviando email: {e}")
+        elapsed = time.perf_counter() - t0
+        logger.info(f"[scheduler] Email semanal enviado em {elapsed:.1f}s")
+    except Exception:
+        logger.exception("[scheduler] Erro enviando email")
     finally:
         db.close()
 
@@ -197,10 +208,8 @@ def create_scheduler() -> BackgroundScheduler:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    from app.logging_config import setup_logging
+    setup_logging()
 
     # Inicializar banco
     Base.metadata.create_all(bind=engine)
@@ -213,9 +222,9 @@ if __name__ == "__main__":
     logger.info("Scheduler iniciado. Pressione Ctrl+C para parar.")
 
     try:
-        import time
+        import time as _time
         while True:
-            time.sleep(60)
+            _time.sleep(60)
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
         logger.info("Scheduler encerrado.")

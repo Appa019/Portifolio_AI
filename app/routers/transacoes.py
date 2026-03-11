@@ -1,7 +1,10 @@
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models.db_models import Ativo, Transacao
@@ -70,8 +73,12 @@ def criar(payload: TransacaoCreate, db: Session = Depends(get_db)):
         try:
             db.flush()
         except Exception:
+            logger.exception(f"Flush falhou para ativo '{ticker_upper}' — possível race condition")
             db.rollback()
-            raise HTTPException(status_code=400, detail=f"Erro ao criar ativo '{ticker_upper}' no banco de dados")
+            # Race condition: outro request criou o mesmo ticker — re-query
+            ativo = db.query(Ativo).filter_by(ticker=ticker_upper).first()
+            if not ativo:
+                raise HTTPException(status_code=400, detail=f"Erro ao criar ativo '{ticker_upper}' no banco de dados")
 
     # Validar lockup em vendas
     if payload.tipo_operacao == "venda":
@@ -99,6 +106,7 @@ def criar(payload: TransacaoCreate, db: Session = Depends(get_db)):
     try:
         db.commit()
     except Exception:
+        logger.exception(f"Commit falhou para transação {ticker_upper}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Erro ao salvar transação no banco de dados")
     db.refresh(transacao)

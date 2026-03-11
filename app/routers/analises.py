@@ -37,20 +37,23 @@ def listar(
     return analises
 
 
-def _run_full_analysis(db_factory, job_id: str | None = None):
-    """Executa análise completa em background."""
+def _run_analysis(executor_fn, db_factory, job_id: str | None = None, error_msg: str = "Erro na análise"):
+    """Executa uma análise em background via executor_fn(orch, job_id)."""
     from app.agents.orchestrator import Orchestrator
+    from app.logging_config import set_job_id
 
+    set_job_id(job_id)
     db = None
     try:
         db = db_factory()
         orch = Orchestrator(db, job_id=job_id)
-        orch.run_full_analysis(job_id=job_id)
+        executor_fn(orch, job_id)
     except Exception as e:
-        logger.exception(f"Erro na análise: {e}")
+        logger.exception(f"{error_msg}: {e}")
         progress_mod.emit(job_id, "error", f"Erro: {str(e)}", 0)
     finally:
         progress_mod.done(job_id)
+        set_job_id(None)
         if db:
             db.close()
 
@@ -66,26 +69,14 @@ async def executar_analise(
     loop = asyncio.get_running_loop()
     progress_mod.register_job(job_id, loop)
 
-    background_tasks.add_task(_run_full_analysis, SessionLocal, job_id)
+    background_tasks.add_task(
+        _run_analysis,
+        lambda orch, jid: orch.run_full_analysis(job_id=jid),
+        SessionLocal,
+        job_id,
+        "Erro na análise completa",
+    )
     return {"mensagem": "Análise completa iniciada em background", "job_id": job_id}
-
-
-def _run_aporte_analysis(valor: float, db_factory, job_id: str | None = None):
-    """Executa análise de aporte em background."""
-    from app.agents.orchestrator import Orchestrator
-
-    db = None
-    try:
-        db = db_factory()
-        orch = Orchestrator(db, job_id=job_id)
-        orch.run_aporte_analysis(valor, job_id=job_id)
-    except Exception as e:
-        logger.exception(f"Erro na análise de aporte: {e}")
-        progress_mod.emit(job_id, "error", f"Erro: {str(e)}", 0)
-    finally:
-        progress_mod.done(job_id)
-        if db:
-            db.close()
 
 
 @router.post("/aporte", status_code=202)
@@ -100,7 +91,14 @@ async def analise_aporte(
     loop = asyncio.get_running_loop()
     progress_mod.register_job(job_id, loop)
 
-    background_tasks.add_task(_run_aporte_analysis, payload.valor, SessionLocal, job_id)
+    valor = payload.valor
+    background_tasks.add_task(
+        _run_analysis,
+        lambda orch, jid: orch.run_aporte_analysis(valor, job_id=jid),
+        SessionLocal,
+        job_id,
+        f"Erro na análise de aporte R${valor:,.2f}",
+    )
     return {
         "mensagem": f"Análise de aporte de R${payload.valor:,.2f} iniciada em background",
         "job_id": job_id,
@@ -119,7 +117,7 @@ async def stream_progress(job_id: str):
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=120.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'step': 'heartbeat', 'message': 'alive'})}\n\n"
                     continue
