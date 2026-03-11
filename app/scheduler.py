@@ -141,7 +141,6 @@ def enviar_email_semanal():
     db = SessionLocal()
     try:
         from app.services.email_service import send_weekly_report
-        from app.services.market_data import get_ptax
         from app.services.portfolio_service import (
             get_portfolio_allocation,
             get_portfolio_assets,

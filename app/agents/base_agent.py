@@ -2,7 +2,7 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import threading

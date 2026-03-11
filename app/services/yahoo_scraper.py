@@ -424,7 +424,7 @@ async def _navigate_stealth(page: Page, url: str, timeout: int = PAGE_TIMEOUT_MS
     if not await _is_captcha(page):
         return resp
 
-    logger.info(f"CAPTCHA na navegação direta, tentando warm-up via homepage...")
+    logger.info("CAPTCHA na navegação direta, tentando warm-up via homepage...")
 
     # Estratégia 2: visitar homepage antes
     await page.goto("https://finance.yahoo.com/", wait_until="domcontentloaded", timeout=timeout)
@@ -434,7 +434,7 @@ async def _navigate_stealth(page: Page, url: str, timeout: int = PAGE_TIMEOUT_MS
     if not await _is_captcha(page):
         return resp
 
-    logger.info(f"CAPTCHA após homepage, tentando referrer Google...")
+    logger.info("CAPTCHA após homepage, tentando referrer Google...")
 
     # Estratégia 3: simular vinda do Google
     await page.goto("https://www.google.com/", wait_until="domcontentloaded", timeout=10000)
@@ -908,7 +908,7 @@ async def scrape_history(
                 iso_date = _parse_date(date_text)
                 if not iso_date:
                     continue
-                o, h, l, c = _parse_number(texts[1]), _parse_number(texts[2]), _parse_number(texts[3]), _parse_number(texts[4])
+                o, h, low, c = _parse_number(texts[1]), _parse_number(texts[2]), _parse_number(texts[3]), _parse_number(texts[4])
                 # Coluna 5 = Adj Close (quando cellCount >= 7)
                 adj_c = _parse_number(texts[5]) if row["cellCount"] >= 7 else None
                 v = _parse_number(texts[-1])
@@ -918,7 +918,7 @@ async def scrape_history(
                     "data": iso_date,
                     "abertura": round(o, 2),
                     "maxima": round(h or o, 2),
-                    "minima": round(l or o, 2),
+                    "minima": round(low or o, 2),
                     "fechamento": round(c, 2),
                     "adj_fechamento": round(adj_c, 2) if adj_c else round(c, 2),
                     "volume": int(v) if v else 0,

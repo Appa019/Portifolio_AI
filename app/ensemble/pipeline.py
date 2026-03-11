@@ -24,7 +24,7 @@ from sklearn.preprocessing import RobustScaler
 from app.ensemble.bilstm_model import BiLSTMAttention, predict_bilstm, train_bilstm
 from app.ensemble.features import create_features, create_target, get_feature_columns, select_features, validate_data_quality
 from app.ensemble.stacking import StackingEnsemble
-from app.ensemble.tft_model import TFTWrapper, predict_tft, train_tft
+from app.ensemble.tft_model import TFTWrapper
 from app.ensemble.validation import WalkForwardValidator
 from app.ensemble.xgboost_model import XGBoostForecaster
 

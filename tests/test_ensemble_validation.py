@@ -53,19 +53,19 @@ check("confianca_exponential", abs(dispersion_at_005 - np.exp(-1)) < 1e-10,
 
 # --- Check 2: Neutral zone threshold ---
 print("\n[2] Neutral zone threshold...")
-from app.ensemble.pipeline import NEUTRAL_THRESHOLD
+from app.ensemble.pipeline import NEUTRAL_THRESHOLD  # noqa: E402
 check("neutral_threshold", NEUTRAL_THRESHOLD == 0.001,
       f"NEUTRAL_THRESHOLD={NEUTRAL_THRESHOLD}")
 
 # --- Check 3: HuberLoss delta ---
 print("\n[3] HuberLoss delta para retornos...")
-import torch.nn as nn
+import torch.nn as nn  # noqa: E402
 loss_fn = nn.HuberLoss(delta=0.02)
 # Com delta=0.02, retornos > 2% usam L1 (robusto), < 2% usam L2 (smooth)
 # Verificar que delta=0.02 esta no codigo
-from app.ensemble.bilstm_model import BiLSTMAttention
+from app.ensemble.bilstm_model import BiLSTMAttention  # noqa: E402
 model_test = BiLSTMAttention(input_size=10)
-import torch
+import torch  # noqa: E402
 x = torch.randn(2, 60, 10)
 y = torch.tensor([0.01, -0.02])
 y_hat = model_test(x)
@@ -74,7 +74,7 @@ check("huber_delta", loss.item() > 0, f"HuberLoss(delta=0.02) computes: {loss.it
 
 # --- Check 4: sMAPE instead of MAPE ---
 print("\n[4] sMAPE em vez de MAPE...")
-from app.ensemble.pipeline import EnsemblePipeline
+from app.ensemble.pipeline import EnsemblePipeline  # noqa: E402
 pipe = EnsemblePipeline()
 y_true = np.array([0.001, -0.001, 0.0, 0.05, -0.03])
 y_pred = np.array([0.002, -0.002, 0.001, 0.04, -0.025])
@@ -100,7 +100,7 @@ check("ipca_correct_value", abs(multiplicative - 12.6825) < 0.01,
 
 # --- Check 6: Feature naming ---
 print("\n[6] Feature naming consistency...")
-from app.ensemble.features import create_features
+from app.ensemble.features import create_features  # noqa: E402
 df_dummy = pd.DataFrame({
     "Open": np.random.uniform(30, 35, 300),
     "High": np.random.uniform(35, 40, 300),
@@ -116,18 +116,18 @@ check("ema12_ema26_gone", "ema12_ema26_ratio" not in df_feat.columns,
 
 # --- Check 7: validate_data_quality is importable and callable ---
 print("\n[7] validate_data_quality()...")
-from app.ensemble.features import validate_data_quality
+from app.ensemble.features import validate_data_quality  # noqa: E402
 warnings = validate_data_quality(df_dummy, ticker="DUMMY")
 check("validate_callable", isinstance(warnings, list), f"{len(warnings)} warnings")
 
 # --- Check 8: predict() does NOT call create_target ---
 print("\n[8] predict() preserva dado mais recente...")
-import inspect
+import inspect  # noqa: E402
 source = inspect.getsource(EnsemblePipeline.predict)
 # Verificar que create_target() NAO é chamado (linhas executáveis, ignorando comentários)
-executable_lines = [l.strip() for l in source.split("\n")
-                    if l.strip() and not l.strip().startswith("#") and not l.strip().startswith('"""')]
-calls_create_target = any("create_target(" in l for l in executable_lines)
+executable_lines = [line.strip() for line in source.split("\n")
+                    if line.strip() and not line.strip().startswith("#") and not line.strip().startswith('"""')]
+calls_create_target = any("create_target(" in line for line in executable_lines)
 check("no_create_target_in_predict", not calls_create_target,
       "predict() nao chama create_target()")
 
@@ -144,7 +144,7 @@ print("\n" + "=" * 60)
 print("PARTE 2: TESTE E2E — PETR4.SA")
 print("=" * 60)
 
-import torch
+import torch  # noqa: E402
 
 if torch.cuda.is_available():
     print(f"\nGPU: {torch.cuda.get_device_name(0)}")

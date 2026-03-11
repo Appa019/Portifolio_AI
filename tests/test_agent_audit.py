@@ -21,12 +21,11 @@ import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from openai import OpenAI
 from app.config import settings
-from app.database import Base
 from app.models.db_models import AgentContext
 
 logging.basicConfig(level=logging.INFO)
@@ -106,7 +105,7 @@ class TestPatternA:
         token_counts.append({"round": 2, "input": r2.usage.input_tokens, "output": r2.usage.output_tokens})
 
         # Round 2 deve ser resposta final (sem mais function_calls)
-        fc_items_r2 = [item for item in r2.output if item.type == "function_call"]
+        _fc_items_r2 = [item for item in r2.output if item.type == "function_call"]
         final_text = r2.output_text or ""
 
         assert final_text, "Modelo deveria retornar texto final"
@@ -161,7 +160,7 @@ class TestWebSearchTool:
             tools=[tool],
             input=[{"role": "user", "content": "Qual o preço atual do bitcoin em USD? Responda em 1 frase."}],
         )
-        text = r.output_text or ""
+        _text = r.output_text or ""
         # Pode ter function_calls intermediárias de web_search, mas deve terminar com texto
         # Se web_search foi chamada, a API processou o search_context_size sem erro
         assert r.id, "API aceitou search_context_size='high'"
@@ -514,7 +513,7 @@ class TestPersistentContext:
         db_session.commit()
 
         # Chamar call_model — deve injetar o contexto anterior
-        result = agent.call_model("O que você recomenda agora?", max_rounds=1)
+        _result = agent.call_model("O que você recomenda agora?", max_rounds=1)
 
         # Verificar que o contexto foi injetado (modelo deveria mencionar algo da análise anterior)
         # Mesmo que o modelo não "lembre", o importante é que o input foi montado corretamente

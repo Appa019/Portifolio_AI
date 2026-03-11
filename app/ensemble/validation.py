@@ -7,7 +7,6 @@ Referência: López de Prado (2018) — "Advances in Financial Machine Learning"
 """
 
 import numpy as np
-import pandas as pd
 
 
 class WalkForwardValidator:

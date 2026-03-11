@@ -4,14 +4,14 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
-logger = logging.getLogger(__name__)
-
 from app.database import get_db
 from app.models.db_models import Ativo, CachePreco, Transacao
 from app.routers.market_data_router import _CRYPTO_TICKERS
 from app.schemas.api_schemas import TransacaoCreate, TransacaoOut
 from app.services.market_data import is_crypto, to_crypto_id
 from app.services.portfolio_service import check_lockup
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/transacoes", tags=["Transações"])
 

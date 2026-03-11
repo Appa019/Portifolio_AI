@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import json
 import logging
 import threading
 import traceback
 from datetime import date
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.agents.base_agent import BaseAgent
+
+if TYPE_CHECKING:
+    from app.ensemble.pipeline import EnsemblePipeline
 from app.services.market_data import (
     get_crypto_history,
     get_macro_data,

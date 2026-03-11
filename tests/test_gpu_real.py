@@ -27,7 +27,7 @@ print(f"{'='*60}\n")
 # ── 1. Coletar dados reais via Yahoo scraper ──────────────────────────
 print("[1/6] Coletando dados PETR4.SA via Yahoo scraper...")
 t0 = time.time()
-from app.ensemble.pipeline import EnsemblePipeline
+from app.ensemble.pipeline import EnsemblePipeline  # noqa: E402
 df = EnsemblePipeline().collect_data("PETR4.SA", start="2020-01-01")
 print(f"  → {len(df)} dias coletados ({time.time()-t0:.1f}s)\n")
 assert len(df) > 500, f"Dados insuficientes: {len(df)}"
@@ -35,7 +35,7 @@ assert len(df) > 500, f"Dados insuficientes: {len(df)}"
 # ── 2. Feature engineering ─────────────────────────────────────────────
 print("[2/6] Calculando features...")
 t0 = time.time()
-from app.ensemble.features import create_features, create_target, get_feature_columns
+from app.ensemble.features import create_features, create_target, get_feature_columns  # noqa: E402
 
 df = create_features(df)
 df = create_target(df, horizon=1)
@@ -48,7 +48,7 @@ train_end = int(n * 0.8)
 val_end = int(n * 0.9)
 train, val, test = df.iloc[:train_end], df.iloc[train_end:val_end], df.iloc[val_end:]
 
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler  # noqa: E402
 scaler = RobustScaler()
 scaler.fit(train[feature_cols])
 X_train = pd.DataFrame(scaler.transform(train[feature_cols]), index=train.index, columns=feature_cols)
@@ -63,7 +63,7 @@ results = {}
 # ── 3. XGBoost GPU ─────────────────────────────────────────────────────
 print("[3/6] XGBoost com device='cuda:0'...")
 t0 = time.time()
-from app.ensemble.xgboost_model import XGBoostForecaster
+from app.ensemble.xgboost_model import XGBoostForecaster  # noqa: E402
 
 xgb_model = XGBoostForecaster(use_gpu=True)
 
@@ -71,26 +71,27 @@ xgb_model = XGBoostForecaster(use_gpu=True)
 params = xgb_model.model.get_params()
 assert params.get("device") == "cuda:0", f"XGBoost device errado: {params.get('device')}"
 assert "tree_method" not in params or params["tree_method"] is None or params["tree_method"] != "gpu_hist", \
-    f"tree_method não deveria ser gpu_hist explícito no XGBoost >= 2.0"
+    "tree_method não deveria ser gpu_hist explícito no XGBoost >= 2.0"
 print(f"  device={params.get('device')} ✓ (sem tree_method explícito)")
 
 xgb_model.fit(X_train, y_train, X_val, y_val)
 xgb_preds = xgb_model.predict(X_test)
 elapsed = time.time() - t0
 
-assert len(xgb_preds) == len(X_test), f"XGBoost preds shape errado"
+assert len(xgb_preds) == len(X_test), "XGBoost preds shape errado"
 assert not np.isnan(xgb_preds).any(), "XGBoost produziu NaN"
 results["xgboost"] = {"time": elapsed, "preds": len(xgb_preds), "mean": float(np.mean(xgb_preds))}
 print(f"  → {len(xgb_preds)} predictions, mean={np.mean(xgb_preds):.6f} ({elapsed:.1f}s) ✓\n")
 
 # Limpar VRAM
 torch.cuda.empty_cache()
-import gc; gc.collect()
+import gc  # noqa: E402
+gc.collect()
 
 # ── 4. BiLSTM + Attention GPU ──────────────────────────────────────────
 print("[4/6] BiLSTM + Attention com FP16 mixed precision...")
 t0 = time.time()
-from app.ensemble.bilstm_model import train_bilstm, predict_bilstm
+from app.ensemble.bilstm_model import train_bilstm, predict_bilstm  # noqa: E402
 
 seq_len = 60
 bilstm_model = train_bilstm(
@@ -122,14 +123,15 @@ assert not np.isnan(bilstm_valid).any(), "BiLSTM produziu NaN na região válida
 results["bilstm"] = {"time": elapsed, "preds": int(n_valid), "mean": float(np.mean(bilstm_valid))}
 print(f"  → {n_valid} predictions válidas (de {len(bilstm_preds)} com NaN-padding), mean={np.mean(bilstm_valid):.6f} ({elapsed:.1f}s) ✓\n")
 
-torch.cuda.empty_cache(); gc.collect()
+torch.cuda.empty_cache()
+gc.collect()
 vram_after_bilstm = torch.cuda.memory_allocated() / 1e6
 print(f"  VRAM após cleanup: {vram_after_bilstm:.0f} MB\n")
 
 # ── 5. TFT GPU ─────────────────────────────────────────────────────────
 print("[5/6] TFT com FP16 mixed precision...")
 t0 = time.time()
-from app.ensemble.tft_model import TFTWrapper
+from app.ensemble.tft_model import TFTWrapper  # noqa: E402
 
 tft_wrapper = TFTWrapper(
     target="target",
@@ -161,12 +163,13 @@ results["tft"] = {"time": elapsed, "preds_val": len(tft_val_preds), "preds_test"
 print(f"  test predictions (predict_on_data): {len(tft_test_preds)} ✓")
 print(f"  mean={np.mean(tft_test_preds):.6f} ({elapsed:.1f}s) ✓\n")
 
-torch.cuda.empty_cache(); gc.collect()
+torch.cuda.empty_cache()
+gc.collect()
 
 # ── 6. Stacking Meta-Learner (CPU) ────────────────────────────────────
 print("[6/6] Stacking meta-learner (CPU)...")
 t0 = time.time()
-from app.ensemble.stacking import StackingEnsemble
+from app.ensemble.stacking import StackingEnsemble  # noqa: E402
 
 # Alinhar predictions para stacking usando máscara np.isfinite (novo padrão)
 # bilstm_preds agora tem NaN-padding (len == len(X_test))
@@ -197,7 +200,7 @@ elapsed = time.time() - t0
 assert len(final_preds) == min_len, "Stacking preds shape errado"
 assert not np.isnan(final_preds).any(), "Stacking produziu NaN"
 
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score  # noqa: E402
 rmse = float(np.sqrt(mean_squared_error(y_aligned, final_preds)))
 r2 = float(r2_score(y_aligned, final_preds))
 dir_acc = float((np.sign(final_preds) == np.sign(y_aligned)).mean() * 100)
@@ -226,4 +229,4 @@ print(f"  VRAM headroom: {8.0 - peak_vram:.2f} GB ✓")
 
 total_time = sum(r["time"] for r in results.values())
 print(f"\n  Tempo total: {total_time:.0f}s")
-print(f"\n✅ TODOS OS MODELOS RODARAM NA GPU COM SUCESSO\n")
+print("\n✅ TODOS OS MODELOS RODARAM NA GPU COM SUCESSO\n")

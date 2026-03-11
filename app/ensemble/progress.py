@@ -4,7 +4,6 @@ Threads síncronas (BackgroundTasks) emitem eventos -> fila async -> SSE endpoin
 """
 
 import asyncio
-import json
 import logging
 from typing import Any
 

@@ -13,13 +13,11 @@ Uso:
   python -m pytest tests/test_browser_concurrency.py -v
 """
 
-import asyncio
 import concurrent.futures
 import threading
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 class TestBrowserSemaphore:
@@ -81,7 +79,6 @@ class TestBrowserSemaphore:
     def test_scrape_fresh_acquires_and_releases_semaphore(self):
         """Verifica que _scrape_fresh adquire e libera o semaforo corretamente."""
         from app.services.yahoo_scraper import (
-            _active_browsers,
             _fresh_browser_semaphore,
             MAX_FRESH_BROWSERS,
         )
@@ -127,7 +124,6 @@ class TestSharedExecutor:
 
     def test_run_async_uses_shared_executor(self):
         """Verifica que _run_async nao cria executor novo quando loop esta rodando."""
-        from app.services.market_data import _shared_executor
 
         # Simular coroutine simples
         async def simple_coro():

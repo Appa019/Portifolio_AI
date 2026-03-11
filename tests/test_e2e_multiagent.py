@@ -17,7 +17,6 @@ Custo estimado: ~$0.01-0.03 (gpt-4.1-mini, poucas chamadas)
 Tempo estimado: ~2-5 min (scraping + OpenAI rounds)
 """
 
-import json
 import logging
 import os
 import socket
@@ -559,7 +558,7 @@ class TestFase6BackendHTTP:
         data = r.json()
         assert isinstance(data, (dict, list))
 
-        logger.info(f"F6.5 PASS — /api/configuracoes OK")
+        logger.info("F6.5 PASS — /api/configuracoes OK")
 
     def test_macro_endpoint(self, uvicorn_server):
         """GET /api/market/macro retorna dados macro."""

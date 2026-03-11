@@ -26,7 +26,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from app.config import settings
-from app.database import Base
 from app.models.db_models import AgentContext, CustoToken
 
 logging.basicConfig(level=logging.INFO)
@@ -194,7 +193,7 @@ class TestN2Logic:
             MockTA.return_value = mock_instance
 
             # Primeira chamada — deve criar N3
-            r1 = b3._run_ticker_analyst("PETR4", "contexto teste")
+            _r1 = b3._run_ticker_analyst("PETR4", "contexto teste")
             MockTA.assert_called_once()
 
             # Segunda chamada — bloqueada por deduplicacao

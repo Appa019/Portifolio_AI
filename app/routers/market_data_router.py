@@ -16,7 +16,6 @@ from app.services.market_data import (
     get_stock_history,
     get_stock_price,
     is_crypto,
-    search_tickers,
     to_crypto_id,
 )
 

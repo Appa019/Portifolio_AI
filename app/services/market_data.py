@@ -183,7 +183,6 @@ def _get_stock_history_yfinance(ticker: str, period: str = "1y") -> list[dict] |
     """Fallback: busca histórico OHLCV de ação B3 via yfinance (auto_adjust=True)."""
     try:
         import yfinance as yf
-        import pandas as pd
 
         period_map = {
             "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
@@ -963,7 +962,7 @@ def validate_history(records: list[dict]) -> dict:
         "warnings": list[str],    # Avisos não críticos
     }
     """
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt
 
     report: dict = {
         "valido": False,
