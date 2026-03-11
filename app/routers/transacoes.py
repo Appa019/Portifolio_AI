@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
@@ -7,15 +7,36 @@ from sqlalchemy.orm import Session, joinedload
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.models.db_models import Ativo, Transacao
+from app.models.db_models import Ativo, CachePreco, Transacao
 from app.routers.market_data_router import _CRYPTO_TICKERS
 from app.schemas.api_schemas import TransacaoCreate, TransacaoOut
-from app.services.market_data import is_crypto
+from app.services.market_data import is_crypto, to_crypto_id
 from app.services.portfolio_service import check_lockup
 
 router = APIRouter(prefix="/transacoes", tags=["Transações"])
 
 CDB_KEYWORDS = ("CDB", "LCI", "LCA", "TESOURO")
+
+
+def _invalidate_price_cache(db: Session, ticker: str, tipo_ativo: str) -> None:
+    """Expira entrada de cache de preço do ticker imediatamente após nova transação.
+
+    Força refresh na próxima leitura do portfolio, evitando dados stale.
+    """
+    try:
+        cache_ticker = to_crypto_id(ticker) if tipo_ativo == "crypto" else ticker
+        entry = (
+            db.query(CachePreco)
+            .filter_by(ticker=cache_ticker, fonte="yahoo_scraper", tipo_dado="preco")
+            .first()
+        )
+        if entry:
+            entry.expira_em = datetime.now()
+            db.commit()
+            logger.info(f"Cache de preço invalidado para {cache_ticker} após transação")
+    except Exception:
+        # Cache invalidation failure is non-critical — log and continue
+        logger.warning(f"Falha ao invalidar cache de preço para {ticker}", exc_info=True)
 
 
 def _detect_tipo(ticker: str) -> str:
@@ -110,6 +131,7 @@ def criar(payload: TransacaoCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail="Erro ao salvar transação no banco de dados")
     db.refresh(transacao)
+    _invalidate_price_cache(db, ticker_upper, tipo_ativo)
     return _to_out(transacao)
 
 

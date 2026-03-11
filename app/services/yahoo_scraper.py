@@ -32,6 +32,7 @@ USER_AGENTS = [
 ]
 
 # Mapeamento de cryptos para ticker Yahoo Finance
+# Canonical source: imported by app/ensemble/pipeline.py — keep both in sync
 CRYPTO_TICKER_MAP = {
     "bitcoin": "BTC-USD",
     "ethereum": "ETH-USD",
@@ -41,6 +42,7 @@ CRYPTO_TICKER_MAP = {
     "chainlink": "LINK-USD",
     "avalanche": "AVAX-USD",
     "polygon": "MATIC-USD",
+    "ripple": "XRP-USD",
 }
 
 MAX_PAGES_PER_CONTEXT = 50

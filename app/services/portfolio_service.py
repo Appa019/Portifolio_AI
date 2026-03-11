@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 from sqlalchemy import func
@@ -61,13 +62,54 @@ def get_posicoes(db: Session) -> list[dict]:
     return posicoes
 
 
+def _fetch_price_for_pos(pos: dict) -> tuple[int, float]:
+    """Busca preço de um ativo em thread separada com sessão DB própria (thread-safe).
+
+    Cria SessionLocal() por thread para evitar sqlite3.InterfaceError ao compartilhar
+    a sessão principal entre threads.
+    """
+    from app.database import SessionLocal
+
+    ativo = pos["ativo"]
+    db = SessionLocal()
+    try:
+        if ativo.tipo == "acao":
+            data = get_stock_price(ativo.ticker, db)
+            return ativo.id, data["preco"] if data else 0.0
+        elif ativo.tipo == "crypto":
+            data = get_crypto_price(to_crypto_id(ativo.ticker), db)
+            return ativo.id, data["preco_brl"] if data else 0.0
+        elif ativo.tipo == "cdb":
+            # CDB: preço = custo médio (sem scraping necessário)
+            return ativo.id, pos["preco_medio"]
+    except Exception:
+        logger.warning(f"Erro ao buscar preço de {ativo.ticker}", exc_info=True)
+    finally:
+        db.close()
+    return ativo.id, 0.0
+
+
 def get_portfolio_assets(db: Session) -> list[dict]:
-    """Retorna lista detalhada de ativos no portfólio com preços atuais."""
+    """Retorna lista detalhada de ativos no portfólio com preços atuais.
+
+    Preços são buscados em paralelo (max 6 threads — alinhado com o semaphore
+    de browsers do yahoo_scraper) usando sessões DB independentes por thread.
+    """
     posicoes = get_posicoes(db)
     if not posicoes:
         return []
 
-    # Calcular valor total para percentuais
+    # Fetch paralelo de preços — cada thread usa sessão DB própria para thread safety
+    precos: dict[int, float] = {}
+    with ThreadPoolExecutor(max_workers=6, thread_name_prefix="portfolio_price") as executor:
+        futures = {executor.submit(_fetch_price_for_pos, pos): pos["ativo"].id for pos in posicoes}
+        for future in as_completed(futures):
+            try:
+                ativo_id, preco = future.result()
+                precos[ativo_id] = preco
+            except Exception:
+                logger.warning("Erro no fetch paralelo de preço", exc_info=True)
+
     assets = []
     valor_total = 0.0
 
@@ -75,18 +117,7 @@ def get_portfolio_assets(db: Session) -> list[dict]:
         ativo = pos["ativo"]
         qtd = pos["quantidade"]
         pm = pos["preco_medio"]
-
-        # Buscar preço atual
-        preco_atual = 0.0
-        if ativo.tipo == "acao":
-            data = get_stock_price(ativo.ticker, db)
-            preco_atual = data["preco"] if data else 0
-        elif ativo.tipo == "crypto":
-            data = get_crypto_price(to_crypto_id(ativo.ticker), db)
-            preco_atual = data["preco_brl"] if data else 0
-        elif ativo.tipo == "cdb":
-            # CDB: valor = custo_total (rendimento calculado separadamente)
-            preco_atual = pm
+        preco_atual = precos.get(ativo.id, 0.0)
 
         valor = qtd * preco_atual
         valor_total += valor

@@ -613,53 +613,68 @@ def get_bcb_historical_series(series_id: int, start_date: str = "2015-01-01") ->
         return pd.Series(dtype=float)
 
 
-def get_macro_data(db: Session | None = None) -> dict:
-    """Dados macro: Selic, CDI, IPCA, PTAX."""
-    if db:
-        cached = _get_cache(db, "brasil", "bcb", "macro")
-        if cached:
-            return cached
-
-    result = {}
-
-    # Selic meta (série 432)
+def _fetch_bcb_selic() -> float | None:
+    """Busca Selic meta (série 432) — isolada para execução paralela."""
     try:
         r = requests.get(f"{BCB_BASE}.432/dados/ultimos/1?formato=json", timeout=10)
         r.raise_for_status()
-        result["selic"] = float(r.json()[0]["valor"])
+        return float(r.json()[0]["valor"])
     except Exception as e:
         logger.warning(f"Erro Selic: {e}")
-        result["selic"] = None
+        return None
 
-    # CDI (série 12)
+
+def _fetch_bcb_cdi() -> float | None:
+    """Busca CDI (série 12) — isolada para execução paralela."""
     try:
         r = requests.get(f"{BCB_BASE}.12/dados/ultimos/1?formato=json", timeout=10)
         r.raise_for_status()
-        result["cdi"] = float(r.json()[0]["valor"])
+        return float(r.json()[0]["valor"])
     except Exception as e:
         logger.warning(f"Erro CDI: {e}")
-        result["cdi"] = None
+        return None
 
-    # IPCA últimos 12 meses (série 433)
+
+def _fetch_bcb_ipca() -> dict:
+    """Busca IPCA últimos 12 meses (série 433) — isolada para execução paralela."""
     try:
         r = requests.get(f"{BCB_BASE}.433/dados/ultimos/12?formato=json", timeout=10)
         r.raise_for_status()
         ipca_data = r.json()
-        result["ipca_mensal"] = [
+        ipca_mensal = [
             {"data": item["data"], "valor": float(item["valor"])}
             for item in ipca_data
         ]
         ipca_product = 1.0
         for item in ipca_data:
             ipca_product *= (1 + float(item["valor"]) / 100)
-        result["ipca_acumulado_12m"] = round((ipca_product - 1) * 100, 2)
+        return {
+            "ipca_mensal": ipca_mensal,
+            "ipca_acumulado_12m": round((ipca_product - 1) * 100, 2),
+        }
     except Exception as e:
         logger.warning(f"Erro IPCA: {e}")
-        result["ipca_mensal"] = []
-        result["ipca_acumulado_12m"] = None
+        return {"ipca_mensal": [], "ipca_acumulado_12m": None}
 
-    # PTAX (série 1)
-    result["ptax"] = get_ptax()
+
+def get_macro_data(db: Session | None = None) -> dict:
+    """Dados macro: Selic, CDI, IPCA, PTAX — fetched em paralelo via _shared_executor."""
+    if db:
+        cached = _get_cache(db, "brasil", "bcb", "macro")
+        if cached:
+            return cached
+
+    # Dispatch 4 fontes em paralelo usando o executor compartilhado do módulo
+    fut_selic = _shared_executor.submit(_fetch_bcb_selic)
+    fut_cdi = _shared_executor.submit(_fetch_bcb_cdi)
+    fut_ipca = _shared_executor.submit(_fetch_bcb_ipca)
+    fut_ptax = _shared_executor.submit(get_ptax)
+
+    result: dict = {}
+    result["selic"] = fut_selic.result(timeout=15)
+    result["cdi"] = fut_cdi.result(timeout=15)
+    result.update(fut_ipca.result(timeout=15))
+    result["ptax"] = fut_ptax.result(timeout=15)
 
     if db:
         _set_cache(db, "brasil", "bcb", "macro", result)

@@ -43,3 +43,8 @@ apscheduler>=3.10
 
 # === Utilities ===
 python-dotenv
+
+# === Dev / Testing ===
+pytest>=8.0
+pytest-timeout>=2.3
+ruff>=0.4

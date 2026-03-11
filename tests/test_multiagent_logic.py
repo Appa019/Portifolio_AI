@@ -25,10 +25,6 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from app.config import settings
 from app.database import Base
 from app.models.db_models import AgentContext, CustoToken
@@ -43,21 +39,7 @@ MAX_ROUNDS = 5
 _NONE_EFFORT = {k: "none" for k in settings.reasoning_effort}
 
 
-# --- Fixtures -----------------------------------------------------------------
-
-@pytest.fixture
-def db_session():
-    """SQLite em memoria para testes isolados (StaticPool para thread safety)."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
+# db_session fixture is provided by tests/conftest.py
 
 
 # --- Helpers ------------------------------------------------------------------

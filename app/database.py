@@ -39,7 +39,7 @@ DEFAULT_CONFIGS = {
     "alocacao_cdb": "0.30",
     "lockup_dias": "30",
     "perfil_risco": "moderado",
-    "email_destinatario": "pedropestana.fgv@gmail.com",
+    "email_destinatario": settings.email_destinatario,
     "intervalo_atualizacao_horas": "1",
 }
 

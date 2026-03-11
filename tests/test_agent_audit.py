@@ -25,9 +25,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from openai import OpenAI
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.config import settings
 from app.database import Base
 from app.models.db_models import AgentContext
@@ -44,15 +41,7 @@ def client():
     return OpenAI(api_key=settings.openai_api_key)
 
 
-@pytest.fixture
-def db_session():
-    """SQLite em memória para testes isolados."""
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
+# db_session fixture is provided by tests/conftest.py
 
 
 # ─── T1: Pattern A — agentic loop com input_list ─────────────────────────────

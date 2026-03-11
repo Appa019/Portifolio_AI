@@ -298,8 +298,15 @@ class BaseAgent(ABC):
             self.db.refresh(analise)
         except Exception:
             self.db.rollback()
-            logger.exception(f"[{self.agent_name}] Falha ao salvar análise — resultado NÃO persistido")
-            raise
+            # Log at ERROR (not silent) but do NOT re-raise: the analysis result was
+            # already computed by the LLM and must still reach the orchestrator.
+            # Re-raising here would cause _run_sub_agent() to swallow the result and
+            # return {"erro": "..."} instead of the actual analysis.
+            logger.error(
+                f"[{self.agent_name}] Falha ao persistir análise no banco — "
+                "resultado NÃO salvo mas retornado ao chamador normalmente.",
+                exc_info=True,
+            )
         return analise
 
     def _load_context(self) -> AgentContext | None:
