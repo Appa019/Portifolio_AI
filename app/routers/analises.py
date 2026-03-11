@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -19,6 +20,9 @@ from app.schemas.api_schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analises", tags=["Análises IA"])
+
+# Mutex: impede execução simultânea de duas análises (evita gasto duplo de tokens)
+_analysis_lock = threading.Lock()
 
 
 @router.get("/", response_model=list[AnaliseOut])
@@ -58,6 +62,14 @@ def _run_analysis(executor_fn, db_factory, job_id: str | None = None, error_msg:
             db.close()
 
 
+def _run_analysis_with_lock(executor_fn, db_factory, job_id: str | None = None, error_msg: str = "Erro na análise"):
+    """Wrapper que libera o mutex ao final da análise."""
+    try:
+        _run_analysis(executor_fn, db_factory, job_id, error_msg)
+    finally:
+        _analysis_lock.release()
+
+
 @router.post("/executar", status_code=202)
 async def executar_analise(
     background_tasks: BackgroundTasks,
@@ -65,12 +77,15 @@ async def executar_analise(
 ):
     from app.database import SessionLocal
 
+    if not _analysis_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Análise já em execução. Aguarde o término.")
+
     job_id = str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     progress_mod.register_job(job_id, loop)
 
     background_tasks.add_task(
-        _run_analysis,
+        _run_analysis_with_lock,
         lambda orch, jid: orch.run_full_analysis(job_id=jid),
         SessionLocal,
         job_id,
@@ -127,7 +142,9 @@ async def stream_progress(job_id: str):
                 if event.get("step") == "done":
                     break
         except asyncio.CancelledError:
-            pass
+            # Cliente desconectou antes do job terminar — limpar registry para evitar memory leak
+            progress_mod.cleanup(job_id)
+            raise
 
     return StreamingResponse(
         event_generator(),

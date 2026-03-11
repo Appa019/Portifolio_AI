@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 BRT = timezone("America/Sao_Paulo")
 
 
+def _criar_alerta_falha(tipo: str, mensagem: str):
+    """Cria alerta de falha no DB para notificar o usuário."""
+    try:
+        from app.models.db_models import Alerta
+        db = SessionLocal()
+        db.add(Alerta(tipo=tipo, mensagem=mensagem, lido=False))
+        db.commit()
+        db.close()
+    except Exception:
+        logger.exception("[scheduler] Falha ao criar alerta de erro")
+
+
 def atualizar_precos():
     """A cada 1h: atualiza preços dos ativos em carteira e cria snapshot."""
     from app.services.market_data import get_crypto_price, get_stock_price, to_crypto_id
@@ -115,8 +127,9 @@ def rodar_analise_semanal():
         orch.run_full_analysis()
         elapsed = time.perf_counter() - t0
         logger.info(f"[scheduler] Análise semanal concluída em {elapsed:.1f}s")
-    except Exception:
+    except Exception as e:
         logger.exception("[scheduler] Erro na análise semanal")
+        _criar_alerta_falha("analise_falhou", f"Análise semanal falhou: {type(e).__name__}: {str(e)[:200]}")
     finally:
         db.close()
 
@@ -181,8 +194,9 @@ def enviar_email_semanal():
         asyncio.run(send_weekly_report(data))
         elapsed = time.perf_counter() - t0
         logger.info(f"[scheduler] Email semanal enviado em {elapsed:.1f}s")
-    except Exception:
+    except Exception as e:
         logger.exception("[scheduler] Erro enviando email")
+        _criar_alerta_falha("email_falhou", f"Email semanal não enviado: {type(e).__name__}: {str(e)[:200]}")
     finally:
         db.close()
 
@@ -207,6 +221,10 @@ def create_scheduler() -> BackgroundScheduler:
     return scheduler
 
 
+# Instância global exportável (usada pelo health check em main.py)
+scheduler: BackgroundScheduler | None = None
+
+
 if __name__ == "__main__":
     from app.logging_config import setup_logging
     setup_logging()
@@ -219,6 +237,7 @@ if __name__ == "__main__":
 
     scheduler = create_scheduler()
     scheduler.start()
+    globals()["scheduler"] = scheduler  # expor para health check
     logger.info("Scheduler iniciado. Pressione Ctrl+C para parar.")
 
     try:

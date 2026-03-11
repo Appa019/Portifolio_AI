@@ -16,6 +16,7 @@ requests
 httpx
 aiohttp
 playwright
+yfinance>=0.2.54
 
 # === Technical Analysis ===
 ta
@@ -43,6 +44,7 @@ apscheduler>=3.10
 
 # === Utilities ===
 python-dotenv
+tenacity>=8.3
 
 # === Dev / Testing ===
 pytest>=8.0

@@ -150,6 +150,129 @@ def _set_cache(db: Session, ticker: str, fonte: str, tipo_dado: str, dados: dict
 # === Ações B3 (Yahoo Scraper) ===
 
 
+def _get_stock_price_yfinance(ticker: str) -> dict | None:
+    """Fallback: busca preço de ação B3 via yfinance (usa API endpoints, não HTML scraping)."""
+    try:
+        import yfinance as yf
+
+        yf_ticker = f"{ticker}.SA" if not ticker.endswith(".SA") else ticker
+        t = yf.Ticker(yf_ticker)
+        info = t.fast_info
+        preco = info.last_price
+        if not preco or preco <= 0:
+            return None
+        return _fill_none({
+            "ticker": ticker,
+            "preco": round(float(preco), 2),
+            "variacao_pct": 0.0,
+            "volume": int(getattr(info, "three_month_average_volume", 0) or 0),
+            "volume_medio_10d": int(getattr(info, "three_month_average_volume", 0) or 0),
+            "market_cap": int(getattr(info, "market_cap", 0) or 0),
+            "nome": ticker,
+            "setor": "",
+            "industria": "",
+            "exchange": "SAO",
+            "mercado_aberto": True,
+        })
+    except Exception as e:
+        logger.warning(f"yfinance preço {ticker}: {e}")
+        return None
+
+
+def _get_stock_history_yfinance(ticker: str, period: str = "1y") -> list[dict] | None:
+    """Fallback: busca histórico OHLCV de ação B3 via yfinance (auto_adjust=True)."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+
+        period_map = {
+            "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
+            "1y": "1y", "2y": "2y", "max": "max",
+        }
+        yf_period = period_map.get(period, "1y")
+        yf_ticker = f"{ticker}.SA" if not ticker.endswith(".SA") else ticker
+        df = yf.download(yf_ticker, period=yf_period, auto_adjust=True, progress=False, multi_level_index=False)
+        if df.empty:
+            return None
+        records = []
+        for dt, row in df.iterrows():
+            close = float(row["Close"])
+            records.append({
+                "data": dt.strftime("%Y-%m-%d"),
+                "abertura": round(float(row["Open"]), 4),
+                "maxima": round(float(row["High"]), 4),
+                "minima": round(float(row["Low"]), 4),
+                "fechamento": round(close, 4),
+                "adj_fechamento": round(close, 4),  # auto_adjust=True: Close já é ajustado
+                "volume": int(row["Volume"]),
+            })
+        return records or None
+    except Exception as e:
+        logger.warning(f"yfinance histórico {ticker}: {e}")
+        return None
+
+
+def _get_crypto_price_yfinance(crypto_id: str) -> dict | None:
+    """Fallback: busca preço de crypto via yfinance."""
+    try:
+        import yfinance as yf
+        from app.services.yahoo_scraper import CRYPTO_TICKER_MAP
+
+        yf_ticker = CRYPTO_TICKER_MAP.get(crypto_id.lower(), f"{crypto_id.upper()}-USD")
+        t = yf.Ticker(yf_ticker)
+        info = t.fast_info
+        preco_usd = info.last_price
+        if not preco_usd or preco_usd <= 0:
+            return None
+        ptax = get_ptax()
+        return _fill_none({
+            "id": crypto_id,
+            "ticker": yf_ticker,
+            "nome": crypto_id,
+            "preco_usd": round(float(preco_usd), 2),
+            "preco_brl": round(float(preco_usd) * ptax, 2) if ptax else 0,
+            "variacao_24h_pct": 0.0,
+            "market_cap_usd": int(getattr(info, "market_cap", 0) or 0),
+            "volume_24h": 0,
+        })
+    except Exception as e:
+        logger.warning(f"yfinance crypto {crypto_id}: {e}")
+        return None
+
+
+def _get_crypto_history_yfinance(crypto_id: str, period: str = "1y") -> list[dict] | None:
+    """Fallback: busca histórico OHLCV de crypto via yfinance (auto_adjust=True)."""
+    try:
+        import yfinance as yf
+        from app.services.yahoo_scraper import CRYPTO_TICKER_MAP
+
+        period_map = {
+            "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
+            "1y": "1y", "2y": "2y", "max": "max",
+        }
+        yf_period = period_map.get(period, "1y")
+        yf_ticker = CRYPTO_TICKER_MAP.get(crypto_id.lower(), f"{crypto_id.upper()}-USD")
+        df = yf.download(yf_ticker, period=yf_period, auto_adjust=True, progress=False, multi_level_index=False)
+        if df.empty:
+            return None
+        records = []
+        for dt, row in df.iterrows():
+            close = float(row["Close"])
+            records.append({
+                "data": dt.strftime("%Y-%m-%d"),
+                "abertura": round(float(row["Open"]), 4),
+                "maxima": round(float(row["High"]), 4),
+                "minima": round(float(row["Low"]), 4),
+                "fechamento": round(close, 4),
+                "adj_fechamento": round(close, 4),
+                "volume": int(row["Volume"]),
+            })
+        return records or None
+    except Exception as e:
+        logger.warning(f"yfinance histórico crypto {crypto_id}: {e}")
+        return None
+
+
 def get_stock_price(ticker: str, db: Session | None = None) -> dict | None:
     ticker = _validate_ticker(ticker) or ticker  # fallback ao original se não B3
     if db:
@@ -158,12 +281,16 @@ def get_stock_price(ticker: str, db: Session | None = None) -> dict | None:
             return cached
 
     result = _get_stock_price_scraper(ticker)
+    if not result:
+        logger.info(f"Scraper falhou para {ticker} — tentando yfinance")
+        result = _get_stock_price_yfinance(ticker)
+
     if result:
         if db:
             _set_cache(db, ticker, "yahoo_scraper", "preco", result)
         return result
 
-    logger.warning(f"Scraper falhou para {ticker}")
+    logger.warning(f"Todas as fontes falharam para preço de {ticker}")
     return None
 
 
@@ -214,6 +341,31 @@ def get_stock_fundamentals(ticker: str, db: Session | None = None) -> dict | Non
 
     logger.warning(f"Scraper falhou fundamentos {ticker}")
     return None
+
+
+_FUNDAMENTALS_RANGES = {
+    "pl": (-500, 500),
+    "pvp": (-50, 100),
+    "roe": (-200, 200),
+    "margem_liquida": (-200, 200),
+    "dividend_yield": (0, 100),
+    "beta": (-5, 10),
+}
+
+
+def _validate_fundamentals(d: dict) -> dict:
+    """Anula campos fora de faixas plausíveis (artifacts de scraping)."""
+    for key, (lo, hi) in _FUNDAMENTALS_RANGES.items():
+        val = d.get(key)
+        if val is not None:
+            try:
+                f = float(val)
+                if not (lo <= f <= hi):
+                    logger.warning(f"Fundamental {key}={f} fora do range [{lo},{hi}] — anulado")
+                    d[key] = None
+            except (TypeError, ValueError):
+                d[key] = None
+    return d
 
 
 def _get_stock_fundamentals_scraper(ticker: str) -> dict | None:
@@ -301,7 +453,7 @@ def _get_stock_fundamentals_scraper(ticker: str) -> dict | None:
                     "medio": targets.get("average"),
                 }
 
-        return _fill_none(result)
+        return _fill_none(_validate_fundamentals(result))
     except Exception as e:
         logger.warning(f"Erro scraper fundamentos {ticker}: {e}")
         return None
@@ -316,12 +468,16 @@ def get_stock_history(ticker: str, period: str = "1y", db: Session | None = None
             return cached
 
     result = _get_stock_history_scraper(ticker, period)
+    if not result:
+        logger.info(f"Scraper falhou histórico {ticker} — tentando yfinance")
+        result = _get_stock_history_yfinance(ticker, period)
+
     if result:
         if db:
             _set_cache(db, ticker, "yahoo_scraper", cache_key, result)
         return result
 
-    logger.warning(f"Scraper falhou histórico {ticker}")
+    logger.warning(f"Todas as fontes falharam para histórico de {ticker}")
     return None
 
 
@@ -372,12 +528,16 @@ def get_crypto_price(crypto_id: str, db: Session | None = None) -> dict | None:
             return cached
 
     result = _get_crypto_price_scraper(crypto_id)
+    if not result:
+        logger.info(f"Scraper falhou crypto {crypto_id} — tentando yfinance")
+        result = _get_crypto_price_yfinance(crypto_id)
+
     if result:
         if db:
             _set_cache(db, crypto_id, "yahoo_scraper", "preco", result)
         return result
 
-    logger.warning(f"Scraper falhou crypto {crypto_id}")
+    logger.warning(f"Todas as fontes falharam para preço crypto {crypto_id}")
     return None
 
 
@@ -420,12 +580,16 @@ def get_crypto_history(crypto_id: str, period: str = "1y", db: Session | None = 
             return cached
 
     result = _get_crypto_history_scraper(crypto_id, period)
+    if not result:
+        logger.info(f"Scraper falhou histórico crypto {crypto_id} — tentando yfinance")
+        result = _get_crypto_history_yfinance(crypto_id, period)
+
     if result:
         if db:
             _set_cache(db, crypto_id, "yahoo_scraper", cache_key, result)
         return result
 
-    logger.warning(f"Scraper falhou histórico crypto {crypto_id}")
+    logger.warning(f"Todas as fontes falharam para histórico crypto {crypto_id}")
     return None
 
 
@@ -534,6 +698,51 @@ _ptax_lock = threading.Lock()
 _ptax_cache: float | None = None
 _ptax_cache_time: datetime | None = None
 _PTAX_CACHE_TTL = timedelta(minutes=5)
+
+_cdi_lock = threading.Lock()
+_cdi_cache: float | None = None
+_cdi_cache_time: datetime | None = None
+_CDI_CACHE_TTL = timedelta(hours=1)
+
+
+def get_cdi_annual_rate() -> float:
+    """CDI anual (% a.a.) com cache de 1 hora, thread-safe.
+
+    BCB série 12 retorna a taxa overnight em % a.d. (ex: 0.0551 = 0.0551%/dia).
+    Esta função converte para % a.a. via capitalização composta:
+        annual = ((1 + daily_pct/100)^252 - 1) * 100
+
+    Fallback: 13.75% a.a. (patamar CDI de 2025-2026).
+    """
+    global _cdi_cache, _cdi_cache_time
+
+    with _cdi_lock:
+        if (
+            _cdi_cache is not None
+            and _cdi_cache_time
+            and (datetime.now() - _cdi_cache_time) < _CDI_CACHE_TTL
+        ):
+            return _cdi_cache
+
+    try:
+        cdi_daily_pct = _fetch_bcb_cdi()  # % ao dia, ex: 0.0551
+        if cdi_daily_pct is not None and cdi_daily_pct > 0:
+            # Anualizar via capitalização composta (252 dias úteis/ano)
+            cdi_annual = ((1 + cdi_daily_pct / 100) ** 252 - 1) * 100
+            with _cdi_lock:
+                _cdi_cache = cdi_annual
+                _cdi_cache_time = datetime.now()
+            return cdi_annual
+    except Exception as e:
+        logger.warning(f"get_cdi_annual_rate: erro ao buscar CDI — {e}")
+
+    with _cdi_lock:
+        if _cdi_cache is not None:
+            logger.info("get_cdi_annual_rate: usando cache expirado")
+            return _cdi_cache
+
+    logger.warning("get_cdi_annual_rate: BCB indisponível — fallback 13.75%")
+    return 13.75
 
 
 def get_ptax() -> float:

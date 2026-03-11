@@ -80,4 +80,50 @@ app.include_router(market_data_router.router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    from datetime import datetime, timedelta
+
+    from fastapi.responses import JSONResponse
+
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.models.db_models import PortfolioSnapshot
+
+    issues = []
+
+    # DB connectivity
+    try:
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+    except Exception as e:
+        issues.append(f"db: {e}")
+
+    # Dados frescos (último snapshot < 2h)
+    try:
+        db = SessionLocal()
+        cutoff = datetime.now() - timedelta(hours=2)
+        ultimo = db.query(PortfolioSnapshot).order_by(PortfolioSnapshot.data.desc()).first()
+        db.close()
+        if ultimo and ultimo.data < cutoff:
+            issues.append(f"dados_stale: último snapshot {ultimo.data.isoformat()}")
+    except Exception:
+        pass  # não crítico
+
+    # Scheduler ativo
+    try:
+        from app.scheduler import scheduler as _scheduler
+        if _scheduler and not _scheduler.running:
+            issues.append("scheduler: não está rodando")
+    except Exception:
+        pass  # scheduler pode não estar iniciado em dev
+
+    # API key presente
+    if not settings.openai_api_key:
+        issues.append("openai_api_key: ausente")
+
+    status = "degraded" if issues else "ok"
+    code = 503 if issues else 200
+    return JSONResponse(
+        status_code=code,
+        content={"status": status, "issues": issues, "ts": datetime.now().isoformat()},
+    )

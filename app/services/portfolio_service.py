@@ -34,12 +34,16 @@ def get_posicoes(db: Session) -> list[dict]:
         custo_total = 0.0
         lock_up_ate = None
 
+        data_mais_antiga = None  # earliest purchase date (for CDB CDI accrual)
         for t in transacoes:
             if t.tipo_operacao == "compra":
                 custo_total += t.quantidade * t.preco_unitario
                 quantidade += t.quantidade
                 if t.lock_up_ate and (lock_up_ate is None or t.lock_up_ate > lock_up_ate):
                     lock_up_ate = t.lock_up_ate
+                # transacoes is sorted ascending — first compra = oldest date
+                if data_mais_antiga is None:
+                    data_mais_antiga = t.data_operacao
             elif t.tipo_operacao == "venda":
                 if quantidade > 0:
                     preco_medio = custo_total / quantidade
@@ -57,6 +61,7 @@ def get_posicoes(db: Session) -> list[dict]:
             "preco_medio": round(preco_medio, 2),
             "custo_total": round(custo_total, 2),
             "lock_up_ate": lock_up_ate,
+            "data_mais_antiga": data_mais_antiga,
         })
 
     return posicoes
@@ -75,13 +80,25 @@ def _fetch_price_for_pos(pos: dict) -> tuple[int, float]:
     try:
         if ativo.tipo == "acao":
             data = get_stock_price(ativo.ticker, db)
-            return ativo.id, data["preco"] if data else 0.0
+            return ativo.id, float(data["preco"]) if data and data.get("preco") else 0.0
         elif ativo.tipo == "crypto":
             data = get_crypto_price(to_crypto_id(ativo.ticker), db)
-            return ativo.id, data["preco_brl"] if data else 0.0
+            return ativo.id, float(data["preco_brl"]) if data and data.get("preco_brl") else 0.0
         elif ativo.tipo == "cdb":
-            # CDB: preço = custo médio (sem scraping necessário)
-            return ativo.id, pos["preco_medio"]
+            # CDB liquidez diária: accrual CDI desde a data da primeira compra.
+            # preco_atual = valor_acumulado / quantidade, refletindo o CDI earned.
+            data_compra = pos.get("data_mais_antiga")
+            if data_compra:
+                from app.services.market_data import get_cdi_annual_rate
+                cdi_anual = get_cdi_annual_rate()
+                dias = (date.today() - data_compra).days
+                fator = (1 + cdi_anual / 100) ** (dias / 365)
+                valor_acumulado = pos["custo_total"] * fator
+                qtd = pos["quantidade"]
+                preco = valor_acumulado / qtd if qtd > 0 else pos["preco_medio"]
+            else:
+                preco = pos["preco_medio"]
+            return ativo.id, round(preco, 6)
     except Exception:
         logger.warning(f"Erro ao buscar preço de {ativo.ticker}", exc_info=True)
     finally:

@@ -7,8 +7,9 @@ from datetime import datetime
 
 import threading
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError, APIStatusError, APITimeoutError
 from sqlalchemy.orm import Session
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.config import settings
 from app.logging_config import set_job_id
@@ -41,6 +42,17 @@ def _get_openai_client() -> OpenAI:
             if _openai_client is None:
                 _openai_client = OpenAI(api_key=settings.openai_api_key)
     return _openai_client
+
+
+@retry(
+    retry=retry_if_exception_type((RateLimitError, APIStatusError, APITimeoutError)),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
+def _call_openai_api(client: OpenAI, **kwargs):
+    """Wrapper com retry automático para erros transientes da OpenAI API."""
+    return client.responses.create(**kwargs)
 
 
 def web_search_tool(context_size: str = "medium") -> dict:
@@ -146,7 +158,7 @@ class BaseAgent(ABC):
 
             t_api = time.perf_counter()
             try:
-                response = self.client.responses.create(**kwargs)
+                response = _call_openai_api(self.client, **kwargs)
             except Exception as e:
                 if cross_exec_prev_id and "previous_response_id" in str(e).lower():
                     logger.warning(f"[{self.agent_name}] Stale response_id, retrying without it")
@@ -157,7 +169,7 @@ class BaseAgent(ABC):
                             agent=self.agent_name)
                     kwargs.pop("previous_response_id", None)
                     cross_exec_prev_id = None
-                    response = self.client.responses.create(**kwargs)
+                    response = _call_openai_api(self.client, **kwargs)
                 else:
                     raise
             api_elapsed = time.perf_counter() - t_api
