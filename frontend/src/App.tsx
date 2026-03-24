@@ -6,6 +6,7 @@ import Analises from './pages/Analises'
 import Custos from './pages/Custos'
 import Alertas from './pages/Alertas'
 import Config from './pages/Config'
+import { Agentes } from './pages/Agentes'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="transacoes" element={<Transacoes />} />
           <Route path="analises" element={<Analises />} />
+          <Route path="agentes" element={<Agentes />} />
           <Route path="custos" element={<Custos />} />
           <Route path="alertas" element={<Alertas />} />
           <Route path="config" element={<Config />} />

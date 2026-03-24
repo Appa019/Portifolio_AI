@@ -8,6 +8,7 @@ import {
   Bell,
   Settings,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 import { getAlertas } from '../api/client'
 
@@ -15,6 +16,7 @@ const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/transacoes', label: 'Transacoes', icon: ArrowLeftRight },
   { to: '/analises', label: 'Analises IA', icon: BrainCircuit },
+  { to: '/agentes', label: 'Agentes', icon: Users },
   { to: '/alertas', label: 'Alertas', icon: Bell },
   { to: '/custos', label: 'Custos IA', icon: DollarSign },
   { to: '/config', label: 'Configuracoes', icon: Settings },

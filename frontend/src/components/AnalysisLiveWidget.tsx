@@ -4,28 +4,47 @@ import type { ProgressEvent } from '../api/client'
 
 const STEP_LABELS: Record<string, string> = {
   connected: 'Conectado',
+  pipeline_start: 'Pipeline',
+  pipeline_done: 'Concluído',
+  phase_start: 'Fase',
   orchestrator_start: 'Orquestrador',
-  agent_start: 'Sub-agente',
+  agent_start: 'Agente',
   agent_thinking: 'Pensando',
   function_call: 'Executando',
-  data_collect: 'Dados',
-  features: 'Indicadores',
-  xgboost_train: 'XGBoost',
-  bilstm_train: 'BiLSTM',
-  tft_train: 'TFT',
-  stacking: 'Stacking',
-  model_saved: 'Salvo',
-  model_loaded: 'Cache',
-  ensemble_train: 'Ensemble',
-  metrics: 'Metricas',
-  done: 'Concluido',
+  prefetch: 'Pre-carregando',
+  done: 'Concluído',
   error: 'Erro',
   warning: 'Aviso',
   agent_timeout: 'Timeout',
-  ensemble_error: 'Erro ensemble',
-  vram: 'VRAM',
-  diversity: 'Diversidade',
-  feature_importance: 'Features',
+}
+
+const AGENT_NAMES: Record<string, string> = {
+  cio: 'Carlos Mendonça (CIO)',
+  head_b3: 'Marcelo Tavares (Head B3)',
+  head_crypto: 'Luísa Nakamoto (Head Crypto)',
+  cro: 'Fernando Rocha (CRO)',
+  fundamentalista_b3: 'Ricardo Moura (Fundamentalista)',
+  tecnico_b3: 'Bruno Kato (Técnico)',
+  setorial_b3: 'Beatriz Almeida (Setorial)',
+  risk_b3: 'Patrícia Campos (Risk)',
+  trade_b3: 'Diego Lopes (Trade)',
+  fundamentalista_crypto: 'Thiago Satoshi (Fundamentalista)',
+  tecnico_crypto: 'Juliana Pires (Técnica)',
+  onchain_analyst: 'Lucas Webb (On-Chain)',
+  risk_crypto: 'André Faria (Risk)',
+  trade_crypto: 'Camila Duarte (Trade)',
+  macro_economist: 'Helena Bastos (Macro)',
+  sentiment_analyst: 'Marina Leal (Sentimento)',
+  compliance_officer: 'Rafael Tanaka (Compliance)',
+  quant_analyst: 'Eduardo Queiroz (Quant)',
+}
+
+function resolveAgentLabel(agentName?: string): string {
+  if (!agentName) return ''
+  if (AGENT_NAMES[agentName]) return AGENT_NAMES[agentName]
+  if (agentName.startsWith('ticker_analyst_')) return `Analista ${agentName.replace('ticker_analyst_', '')}`
+  if (agentName.startsWith('crypto_analyst_')) return `Analista ${agentName.replace('crypto_analyst_', '').replace(/^\w/, c => c.toUpperCase())}`
+  return agentName
 }
 
 interface Props {
@@ -126,23 +145,33 @@ export default function AnalysisLiveWidget({ jobId, onDone }: Props) {
       {!collapsed && (
         <div ref={scrollRef} className="px-5 py-3 space-y-1.5 max-h-64 overflow-y-auto"
              style={{ scrollbarWidth: 'thin' }}>
-          {events.filter(e => e.step !== 'connected').map((e, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs"
-                 style={{ color: e.step === 'error' ? '#dc2626' : '#6b7280' }}>
-              <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium"
-                    style={{
-                      background: e.step === 'done' ? '#dcfce7' :
-                                  e.step === 'error' ? '#fef2f2' :
-                                  'rgba(21,128,61,0.1)',
-                      color: e.step === 'done' ? '#16a34a' :
-                             e.step === 'error' ? '#dc2626' :
-                             '#15803d',
-                    }}>
-                {STEP_LABELS[e.step] || e.step}
-              </span>
-              <span className="leading-relaxed">{e.message}</span>
-            </div>
-          ))}
+          {events.filter(e => e.step !== 'connected').map((e, i) => {
+            const isPhase = e.step === 'phase_start' || e.step === 'pipeline_start' || e.step === 'pipeline_done'
+            const agentLabel = e.agent ? resolveAgentLabel(e.agent) : ''
+            return (
+              <div key={i} className={`flex items-start gap-2 text-xs ${isPhase ? 'mt-2 mb-1' : ''}`}
+                   style={{ color: e.step === 'error' ? '#dc2626' : '#6b7280' }}>
+                <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium"
+                      style={{
+                        background: e.step === 'done' || e.step === 'pipeline_done' ? '#dcfce7' :
+                                    e.step === 'error' ? '#fef2f2' :
+                                    isPhase ? 'rgba(37,99,235,0.1)' :
+                                    'rgba(21,128,61,0.1)',
+                        color: e.step === 'done' || e.step === 'pipeline_done' ? '#16a34a' :
+                               e.step === 'error' ? '#dc2626' :
+                               isPhase ? '#2563eb' :
+                               '#15803d',
+                        fontWeight: isPhase ? 700 : 500,
+                      }}>
+                  {STEP_LABELS[e.step] || e.step}
+                </span>
+                <span className="leading-relaxed">
+                  {agentLabel && <span className="font-medium" style={{ color: '#111827' }}>{agentLabel} </span>}
+                  {e.message}
+                </span>
+              </div>
+            )
+          })}
           {!isDone && !isError && events.length > 0 && (
             <div className="flex items-center gap-2 text-xs animate-pulse"
                  style={{ color: '#15803d' }}>
