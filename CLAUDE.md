@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Sistema de gestão de portfólio de investimentos com multi-agentes IA em 3 níveis hierárquicos, rodando localmente (localhost only, sem autenticação). Todo conteúdo voltado ao usuário deve estar em **Português (BR)** — interface, análises, relatórios, alertas e emails.
+Sistema de gestão de portfólio de investimentos com multi-agentes IA em 4 níveis hierárquicos (Goldman Sachs-style), rodando localmente (localhost only, sem autenticação). Todo conteúdo voltado ao usuário deve estar em **Português (BR)** — interface, análises, relatórios, alertas e emails. Inclui 3 bots Telegram (CEO chat + 2 grupos de equipe com debate entre agentes).
 
 ## Development Commands
 
@@ -26,13 +26,10 @@ python -m app.scheduler &
 
 # Tests
 python -m pytest tests/
-python -m pytest tests/test_gpu_real.py -v    # single test
 python -m pytest tests/test_agent_audit.py -v # agent audit (real OpenAI calls, gpt-4.1-mini)
 python -m pytest tests/test_multiagent_logic.py -v -m "not integration"  # logic unit tests ($0)
+python -m pytest tests/test_goldman_agents.py -v -m "not integration"   # goldman expansion tests ($0)
 python -m pytest tests/test_multiagent_logic.py -v -m integration        # logic integration (gpt-5.1)
-
-# PyTorch with CUDA (RTX 2070 SUPER 8GB)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## CORS & Vite Proxy
@@ -49,7 +46,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 | Frontend | React 18 + Tailwind CSS 4 + Vite + React Query + Recharts + Lucide React |
 | Database | SQLite (WAL mode, `portfolio.db`) |
 | AI Agents | OpenAI Responses API — 3 níveis hierárquicos com reasoning |
-| ML Ensemble | XGBoost + BiLSTM-Attention + TFT, stacking meta-learner |
 | Email | Gmail SMTP via aiosmtplib + Jinja2 templates |
 | Scheduler | APScheduler (prices 1h, lockups daily, analysis Mon 7h, email Mon 10h) |
 
@@ -59,12 +55,18 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 |------|----------|
 | `app/models/db_models.py` | All SQLAlchemy ORM models (9 tables) |
 | `app/schemas/api_schemas.py` | All Pydantic request/response schemas |
-| `app/services/` | yahoo_scraper, market_data, portfolio_service, token_cost, ticker_resolver, email |
-| `app/ensemble/` | pipeline, features, bilstm_model, tft_model, xgboost_model, stacking, validation, progress |
+| `app/agents/b3_team/` | 5 N2 B3 agents + ticker_analyst (N3) |
+| `app/agents/crypto_team/` | 5 N2 Crypto agents + crypto_analyst (N3) |
+| `app/agents/cross_team/` | 4 cross-team staff agents (macro, sentiment, compliance, quant) |
+| `app/agents/analysis_pipeline.py` | 4-phase Goldman Sachs orchestrator |
+| `app/agents/personas.py` | 20 agent personas (names, emojis, voice tones) |
+| `app/agents/cro.py` | Chief Risk Officer agent |
+| `app/telegram/` | 3 Telegram bots (CEO, Mesa B3, Mesa Crypto) + debate orchestrator |
+| `app/services/` | yahoo_scraper, market_data, portfolio_service, token_cost, ticker_resolver, email, progress |
 | `app/templates/relatorio_semanal.html` | Jinja2 email template (weekly report) |
 | `frontend/src/api/client.ts` | All API call functions + TypeScript interfaces |
 | `frontend/src/pages/` | Dashboard, Transacoes, Analises, Alertas, Custos, Config |
-| `api_guide/`, `ensamble_guide/`, `open_ai_docs/` | Reference documentation |
+| `api_guide/`, `open_ai_docs/` | Reference documentation |
 | `tests/` | Test suite (see Testing section below) |
 
 ## Frontend — Design System (Financeiro Premium)
@@ -120,26 +122,63 @@ Widget SSE de progresso em tempo real. Vive em `Layout.tsx` (always mounted em t
 
 Todas as cores de charts derivam da paleta acima. EvolutionChart area fill usa `rgba(21,128,61,0.08)`.
 
-## Architecture — Multi-Agent System (3 Levels)
+## Architecture — Multi-Agent System (4 Levels, Goldman Sachs-style)
 
 ```
-N1  Orchestrator (gpt-5.2, reasoning=xhigh) — full portfolio awareness, final decisions
-         ├── N2  B3Agent (gpt-5.1, reasoning=high) — maps B3 market, identifies tickers
-         │        └── N3  TickerAnalyst (gpt-5.1, reasoning=medium) — deep analysis of 1 stock
-         │              (one instance per ticker: ticker_analyst_PETR4, ticker_analyst_VALE3, ...)
-         ├── N2  CryptoAgent (gpt-5.1, reasoning=high) — maps crypto market, identifies cryptos
-         │        └── N3  CryptoAnalyst (gpt-5.1, reasoning=medium) — deep analysis of 1 crypto
-         │              (one instance per crypto: crypto_analyst_bitcoin, crypto_analyst_ethereum, ...)
-         └── N2  StatsAgent (gpt-5.1, reasoning=none) — quantitative ML ensemble
-                  └── EnsemblePipeline: XGBoost + BiLSTM-Attention + TFT
+N0  CIO "Carlos Mendonça" (gpt-5.2, xhigh) — final allocation decisions
+    ├── N1  Head B3 "Marcelo Tavares" (gpt-5.1, high) — coordinates B3 team
+    │   ├── N2  Fundamentalista "Ricardo Moura" (gpt-5.1, medium) — financial statements, valuation
+    │   ├── N2  Técnico "Bruno Kato" (gpt-4.1) — price action, indicators
+    │   ├── N2  Setorial "Beatriz Almeida" (gpt-5.1, medium) — sector rotation, Selic impact
+    │   ├── N2  Risk "Patrícia Campos" (gpt-4.1) — concentration, beta → reports to CRO
+    │   ├── N2  Trade "Diego Lopes" (gpt-4.1) — entry/exit, sizing
+    │   └── N3  TickerAnalyst × N (gpt-5.1, medium) — one per ticker
+    ├── N1  Head Crypto "Luísa Nakamoto" (gpt-5.1, high) — coordinates crypto team
+    │   ├── N2  Fundamentalista "Thiago Satoshi" (gpt-5.1, medium) — tokenomics, TVL
+    │   ├── N2  Técnica "Juliana Pires" (gpt-4.1) — 24/7 technicals, funding rates
+    │   ├── N2  On-Chain "Lucas Webb" (gpt-5.1, medium) — whale tracking, exchange flows
+    │   ├── N2  Risk "André Faria" (gpt-4.1) — smart contract risk → reports to CRO
+    │   ├── N2  Trade "Camila Duarte" (gpt-4.1) — DCA, gas fees, sizing
+    │   └── N3  CryptoAnalyst × N (gpt-5.1, medium) — one per crypto
+    ├── N1  CRO "Fernando Rocha" (gpt-5.1, high) — cross-asset risk, veto power
+    └── Cross-Team Staff:
+        ├── N2  Macro "Helena Bastos" (gpt-5.1, high) — Selic, IPCA, câmbio, Fed
+        ├── N2  Sentiment "Marina Leal" (gpt-4.1) — news flow, social sentiment
+        ├── N2  Compliance "Rafael Tanaka" (gpt-4.1) — CVM, tributação, lockups
+        └── N2  Quant "Eduardo Queiroz" (gpt-5.1, medium) — Sharpe, correlation, beta
 ```
+
+### AnalysisPipeline — 4-Phase Execution ("Morning Meeting")
+
+```
+Phase 1 — Intelligence (parallel):  Macro + Sentiment + Risk B3 + Risk Crypto + Compliance
+Phase 2 — Team Analysis (parallel): Head B3(+team) ‖ Head Crypto(+team) → N3 deep dives
+Phase 3 — Risk Consolidation:       CRO + Quant
+Phase 4 — Final Decision:           CIO
+```
+
+- **File**: `app/agents/analysis_pipeline.py` — deterministic Python orchestrator (NOT an LLM agent)
+- **Budget cap**: `settings.max_cost_per_run_usd` (default $5.00) via `RunBudgetTracker`
+- **DB record**: `AnalysisRun` table tracks status, cost, phases completed
+
+### Telegram Integration (3 bots)
+
+| Bot | Chat type | Agent | Commands |
+|-----|-----------|-------|----------|
+| CEO | Private 1-on-1 | Carlos Mendonça (CIO) | `/analise`, `/portfolio`, `/risco`, `/aporte N`, `/custos` |
+| Mesa B3 | Group | Entire B3 team posts with personas | `/analise`, `/ticker PETR4` |
+| Mesa Crypto | Group | Entire Crypto team posts with personas | `/analise`, `/moeda bitcoin` |
+
+- **DebateOrchestrator**: detects divergences between agents, triggers rebuttal rounds
+- **GroupBroadcaster**: posts formatted messages with persona name/emoji + typing delays
+- **Config**: `TELEGRAM_CEO_TOKEN`, `TELEGRAM_MESA_B3_TOKEN`, `TELEGRAM_MESA_CRYPTO_TOKEN` in `.env`
 
 ### Orchestrator (N1)
 
 - **Model**: gpt-5.2 | **Reasoning**: xhigh
 - **Role**: Coordinates all sub-agents, takes final allocation decisions
 - **Portfolio awareness**: Full — queries summary, assets, allocation, macro
-- **Execution order**: B3 + Crypto FIRST → then Stats with recommended tickers
+- **Execution order**: B3 + Crypto → synthesize final recommendation
 - **File**: `app/agents/orchestrator.py`
 
 ### B3Agent (N2)
@@ -172,13 +211,6 @@ N1  Orchestrator (gpt-5.2, reasoning=xhigh) — full portfolio awareness, final 
 - **Dynamic agent_name**: `crypto_analyst_{id}` (e.g., `crypto_analyst_bitcoin`) — each crypto has persistent context
 - **File**: `app/agents/crypto_analyst.py`
 
-### StatsAgent (N2)
-
-- **Model**: gpt-5.1 | **Reasoning**: none (quantitative only)
-- **Role**: Statistical analysis + ensemble ML predictions for tickers from B3/Crypto agents
-- **Runs AFTER B3 and Crypto agents complete** (needs their recommended tickers)
-- **File**: `app/agents/stats_agent.py`
-
 ### ticker_resolver (utility)
 
 - **Model**: gpt-4.1 | **Reasoning**: N/A (not supported)
@@ -205,12 +237,11 @@ All agents inherit from `BaseAgent` (`app/agents/base_agent.py`) which implement
 
 | Agent | Tools |
 |-------|-------|
-| **Orchestrator** (N1) | `web_search`, `get_portfolio_summary`, `get_portfolio_assets`, `get_portfolio_allocation`, `run_b3_analysis`, `run_crypto_analysis`, `run_stats_analysis`, `get_macro_data` |
+| **Orchestrator** (N1) | `web_search`, `get_portfolio_summary`, `get_portfolio_assets`, `get_portfolio_allocation`, `run_b3_analysis`, `run_crypto_analysis`, `get_macro_data` |
 | **B3Agent** (N2) | `web_search`, `search_tickers`, `analyze_stock_deep` → spawns TickerAnalyst N3 |
 | **CryptoAgent** (N2) | `web_search`, `get_crypto_trending`, `analyze_crypto_deep` → spawns CryptoAnalyst N3 |
 | **TickerAnalyst** (N3) | `web_search`, `get_stock_price`, `get_stock_fundamentals`, `get_stock_history`, `get_stock_dividends` |
 | **CryptoAnalyst** (N3) | `web_search`, `get_crypto_price`, `get_crypto_history` |
-| **StatsAgent** (N2) | `get_stock_history`, `get_crypto_history`, `get_macro_data`, `calculate_stats(prices, risk_free_rate_annual)`, `train_ensemble`, `predict_ensemble` |
 | **ticker_resolver** | `web_search` (via direct Responses API call, not BaseAgent). Uses client singleton (`_get_client()`) |
 
 ## Market Data Pipeline
@@ -230,7 +261,7 @@ Scraper anti-detection patterns (validated in stress tests — 112/112 pass):
 ## Ticker Conventions
 
 - B3 stocks: `PETR4` → `PETR4.SA` (Yahoo suffix added by scraper)
-- Crypto: `bitcoin` → `BTC-USD` (via `CRYPTO_TICKER_MAP` in `pipeline.py` and `CRYPTO_IDS` in `market_data.py`)
+- Crypto: `bitcoin` → `BTC-USD` (via `CRYPTO_IDS` in `market_data.py`)
 - CDB: `cdb_liquidez` (internal, no Yahoo ticker)
 
 ## Ticker Autocomplete (`GET /api/market/search?q=`)
@@ -242,32 +273,9 @@ Busca rápida sem scraping para o formulário de transações. Prioridade:
 
 Listas definidas em `app/routers/market_data_router.py` (`_B3_TICKERS`, `_CRYPTO_TICKERS`). Retorna `{ticker, nome, origem}`. Frontend debounce 300ms em `Transacoes.tsx`.
 
-## Ensemble ML (`app/ensemble/`)
-
-Optimized for **RTX 2070 SUPER (8GB VRAM)**. Detailed architecture docs in `ensamble_guide/`.
-
-**Pipeline**: `collect_data` → `validate_data_quality` → `prepare_data` (features + temporal split) → train XGBoost → BiLSTM → TFT → stacking → diversity check → evaluate
-
-**Key constraints**:
-- FP16 for BiLSTM (FP32 on CPU), **FP32 for TFT** (attention mask -1e9 overflows FP16)
-- Walk-forward temporal validation with **embargo** (never random split)
-- Target: returns (not prices). Scaler fit only on training set
-- Minimum data: `MIN_TRAIN=252`, `MIN_VAL=80`, `MIN_TEST=80` — raises `ValueError` if insufficient
-- **2-learner fallback**: TFT < 20 valid val predictions → stacking uses only XGBoost + BiLSTM
-
-**Feature split**: XGBoost gets ALL ~50 features; BiLSTM/TFT get `neural_feature_cols` (~35, after `select_features()` drops 14 redundant). Macro features optional via `include_macro=True`.
-
-**Prediction output** (`predict()` returns dict):
-- `retorno_previsto_pct`, `direcao` (`"alta"/"baixa"/"neutra"`), `confianca_pct` (0-100%), `fonte`
-- Neutral zone: `|pred| < 0.1%` (`NEUTRAL_THRESHOLD=0.001`)
-- Cascading fallback: ensemble → avg → zero (NaN/inf validated)
-- **Inference uses today's data** — `predict()` does NOT call `create_target()`
-
-**Key sub-modules**: `pipeline.py` (main loop + VRAM monitoring), `features.py` (engineering + quality validation), `bilstm_model.py`, `tft_model.py`, `xgboost_model.py`, `stacking.py` (meta-learner), `validation.py` (walk-forward + embargo)
-
 ## SSE Live Progress
 
-Analysis runs in `BackgroundTasks` (sync threads). Progress events bridge to async SSE via `app/ensemble/progress.py`:
+Analysis runs in `BackgroundTasks` (sync threads). Progress events bridge to async SSE via `app/services/progress.py`:
 - `register_job(job_id, loop)` — creates `asyncio.Queue` + captures event loop
 - `emit(job_id, step, message)` — uses `loop.call_soon_threadsafe(queue.put_nowait, event)` from sync threads
 - Frontend connects to `GET /api/analises/stream/{job_id}` (SSE) via `AnalysisLiveWidget.tsx`
@@ -321,12 +329,11 @@ APScheduler with 4 jobs (`app/scheduler.py`). All jobs use **`America/Sao_Paulo`
 
 | Test file | What it tests | Notes |
 |-----------|---------------|-------|
-| `tests/test_agent_audit.py` | 19 multi-agent audit tests | **Real OpenAI calls** (gpt-4.1-mini), ~34s |
-| `tests/test_multiagent_logic.py` | 14 multi-agent logic tests (10 unit + 4 integration) | Unit: $0, ~2s. Integration: **Real OpenAI calls** (gpt-5.1), ~100s |
+| `tests/test_agent_audit.py` | Multi-agent audit tests | **Real OpenAI calls** (gpt-4.1-mini), ~34s |
+| `tests/test_multiagent_logic.py` | Multi-agent logic tests (unit + integration) | Unit: $0, ~2s. Integration: **Real OpenAI calls** (gpt-5.1), ~100s |
 | `tests/test_e2e_multiagent.py` | E2E multi-agent hierarchy (scraping + N3/N2 agents + DB) | **Real OpenAI + Yahoo scraping**, ~2-5min |
 | `tests/test_browser_concurrency.py` | Browser concurrency (semaphore, memory args, timeouts) | Unit tests with mocks |
-| `tests/test_ensemble_validation.py` | Ensemble pipeline (features, data quality, train, predict) | Real GPU |
-| `tests/test_gpu_real.py` | GPU pipeline end-to-end (BiLSTM, TFT, stacking) | Real GPU, PETR4 data |
+| `tests/test_goldman_agents.py` | Goldman expansion: personas, budget, debate, N2 agents, pipeline | Unit tests ($0), ~1s |
 
 ## .gitignore
 
@@ -339,6 +346,11 @@ OPENAI_API_KEY=
 GMAIL_USER=
 GMAIL_APP_PASSWORD=
 EMAIL_DESTINATARIO=
+TELEGRAM_CEO_TOKEN=              # BotFather token for CEO private chat
+TELEGRAM_MESA_B3_TOKEN=          # BotFather token for Mesa B3 group bot
+TELEGRAM_MESA_CRYPTO_TOKEN=      # BotFather token for Mesa Crypto group bot
+TELEGRAM_MESA_B3_CHAT_ID=        # Telegram group chat ID for Mesa B3
+TELEGRAM_MESA_CRYPTO_CHAT_ID=    # Telegram group chat ID for Mesa Crypto
 ```
 
 ## Token Cost Tracking

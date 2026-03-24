@@ -11,7 +11,6 @@ from app.services.portfolio_service import (
     get_portfolio_assets,
 )
 from app.services.token_cost import RunBudgetTracker
-from app.services.yahoo_scraper import get_stock_history, get_crypto_history
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +136,10 @@ class QuantAnalyst(BaseAgent):
         if name == "get_asset_history":
             ticker = args["ticker"]
             tipo = args["tipo"]
+            # Lazy import to avoid pulling in playwright at module load
+            from app.services.yahoo_scraper import get_stock_history, get_crypto_history as get_crypto_hist
             if tipo == "crypto":
-                data = get_crypto_history(ticker, db=self.db)
+                data = get_crypto_hist(ticker, db=self.db)
             else:
                 data = get_stock_history(ticker, db=self.db)
             return json.dumps(data, ensure_ascii=False, default=str)
