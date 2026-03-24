@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI):
         seed_default_configs(db)
     finally:
         db.close()
+
+    # Start Telegram bots if tokens are configured
+    _start_telegram_bots()
+
     yield
     logger.info("Encerrando aplicação")
     from app.services.yahoo_scraper import close_pool
@@ -76,6 +80,29 @@ app.include_router(alertas.router, prefix="/api")
 app.include_router(custos.router, prefix="/api")
 app.include_router(configuracoes.router, prefix="/api")
 app.include_router(market_data_router.router, prefix="/api")
+
+
+def _start_telegram_bots():
+    """Initialize and start Telegram bots in daemon threads."""
+    from app.telegram.bot_base import start_bot_polling
+    from app.telegram.ceo_bot import create_ceo_bot
+    from app.telegram.mesa_b3_bot import create_mesa_b3_bot
+    from app.telegram.mesa_crypto_bot import create_mesa_crypto_bot
+
+    ceo_app = create_ceo_bot(SessionLocal)
+    if ceo_app:
+        start_bot_polling(settings.telegram_ceo_token, ceo_app, "CEO")
+        logger.info("Telegram bot 'CEO' (Carlos Mendonça) iniciado")
+
+    b3_app = create_mesa_b3_bot(SessionLocal)
+    if b3_app:
+        start_bot_polling(settings.telegram_mesa_b3_token, b3_app, "Mesa-B3")
+        logger.info("Telegram bot 'Mesa B3' iniciado")
+
+    crypto_app = create_mesa_crypto_bot(SessionLocal)
+    if crypto_app:
+        start_bot_polling(settings.telegram_mesa_crypto_token, crypto_app, "Mesa-Crypto")
+        logger.info("Telegram bot 'Mesa Crypto' iniciado")
 
 
 @app.get("/api/health")
