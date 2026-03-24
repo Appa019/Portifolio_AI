@@ -54,6 +54,24 @@ class PortfolioSnapshot(Base):
     rentabilidade_total_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class AnalysisRun(Base):
+    """Groups all agent executions within a single analysis pipeline run."""
+    __tablename__ = "analysis_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running, completed, failed, budget_exceeded
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    total_cost_brl: Mapped[float] = mapped_column(Float, default=0.0)
+    total_agents: Mapped[int] = mapped_column(Integer, default=0)
+    phases_completed: Mapped[int] = mapped_column(Integer, default=0)
+    trigger: Mapped[str] = mapped_column(String(20), default="manual")  # scheduled, manual, telegram, aporte
+
+    analises: Mapped[list["AnaliseIA"]] = relationship(back_populates="run")
+    custos: Mapped[list["CustoToken"]] = relationship(back_populates="run")
+
+
 class AnaliseIA(Base):
     __tablename__ = "analises_ia"
     __table_args__ = (
@@ -70,6 +88,9 @@ class AnaliseIA(Base):
     score_confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
     acao_recomendada: Mapped[str | None] = mapped_column(Text, nullable=True)
     executada: Mapped[bool] = mapped_column(Boolean, default=False)
+    run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("analysis_runs.id"), nullable=True)
+
+    run: Mapped["AnalysisRun | None"] = relationship(back_populates="analises")
 
 
 class CustoToken(Base):
@@ -88,6 +109,9 @@ class CustoToken(Base):
     cotacao_dolar: Mapped[float] = mapped_column(Float, nullable=False)
     custo_brl: Mapped[float] = mapped_column(Float, nullable=False)
     descricao: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("analysis_runs.id"), nullable=True)
+
+    run: Mapped["AnalysisRun | None"] = relationship(back_populates="custos")
 
 
 class Configuracao(Base):
@@ -137,3 +161,20 @@ class AgentContext(Base):
     resumo_contexto: Mapped[str | None] = mapped_column(Text, nullable=True)
     dados_persistentes: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class TelegramConversation(Base):
+    """Logs all Telegram bot interactions for audit and context."""
+    __tablename__ = "telegram_conversations"
+    __table_args__ = (
+        Index("ix_telegram_chat_bot", "chat_id", "bot_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    bot_type: Mapped[str] = mapped_column(String(20), nullable=False)  # ceo, mesa_b3, mesa_crypto
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, default="")
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

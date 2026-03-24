@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -7,6 +8,40 @@ from app.models.db_models import CustoToken
 from app.services.market_data import get_ptax
 
 logger = logging.getLogger(__name__)
+
+
+class RunBudgetTracker:
+    """Thread-safe budget tracker for a single analysis run.
+
+    Accumulates USD cost across all agents in a run and signals
+    when the budget cap has been exceeded.
+    """
+
+    def __init__(self, max_usd: float):
+        self._max = max_usd
+        self._spent = 0.0
+        self._lock = threading.Lock()
+
+    def add(self, cost_usd: float) -> bool:
+        """Add cost and return True if still within budget."""
+        with self._lock:
+            self._spent += cost_usd
+            return self._spent <= self._max
+
+    @property
+    def spent(self) -> float:
+        with self._lock:
+            return self._spent
+
+    @property
+    def exceeded(self) -> bool:
+        with self._lock:
+            return self._spent > self._max
+
+    @property
+    def remaining(self) -> float:
+        with self._lock:
+            return max(0.0, self._max - self._spent)
 
 # Preços por 1M tokens (USD) — atualizado: 2026-03-11
 # ATENÇÃO: atualizar manualmente se OpenAI alterar preços

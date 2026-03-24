@@ -14,13 +14,15 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from app.config import settings
 from app.logging_config import set_job_id
 from app.models.db_models import AgentContext, AnaliseIA
-from app.services.token_cost import log_token_cost
+from app.services.token_cost import RunBudgetTracker, log_token_cost
 
 logger = logging.getLogger(__name__)
 
-# Limita N3 analysts simultâneos. Com pre-fetch, N3 não lança browsers (só cache hits + OpenAI).
-# 7 permite todos os analysts de um N2 rodarem em paralelo.
-N3_ANALYST_SEMAPHORE = threading.Semaphore(7)
+# Limita N3 analysts simultâneos (deep dives por ticker/crypto)
+N3_ANALYST_SEMAPHORE = threading.Semaphore(10)
+
+# Limita N2 analysts simultâneos (analistas de equipe)
+N2_ANALYST_SEMAPHORE = threading.Semaphore(12)
 
 # user_location compartilhado por todos os agentes
 _USER_LOCATION = {
@@ -73,17 +75,34 @@ def web_search_tool(context_size: str = "medium") -> dict:
 WEB_SEARCH_TOOL = web_search_tool("medium")
 
 
+def resolve_agent_model(agent_name: str) -> str:
+    """Resolve model for an agent via settings.agent_models, with fallback."""
+    # For dynamic N3 agents (ticker_analyst_PETR4 → ticker_analyst)
+    agent_key = agent_name.split("_", 2)
+    if len(agent_key) >= 2 and agent_key[0] in ("ticker", "crypto") and agent_key[1] == "analyst":
+        base_key = f"{agent_key[0]}_analyst"
+    else:
+        base_key = agent_name
+    return settings.agent_models.get(base_key, settings.modelo_subagente)
+
+
 class BaseAgent(ABC):
     """Classe base para todos os agentes IA usando OpenAI Responses API."""
 
     agent_name: str = "base"
-    model: str = settings.modelo_subagente
+    level: str = "N2"  # N0, N1, N2, N3 — for telemetry and cost tracking
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, budget_tracker: RunBudgetTracker | None = None):
         self.db = db
         self.client = _get_openai_client()
+        self.budget_tracker = budget_tracker
         self._total_input_tokens = 0
         self._total_output_tokens = 0
+
+    @property
+    def model(self) -> str:
+        """Resolve model dynamically from settings.agent_models."""
+        return resolve_agent_model(self.agent_name)
 
     @abstractmethod
     def system_prompt(self) -> str:
@@ -138,7 +157,7 @@ class BaseAgent(ABC):
             logger.info(f"[{self.agent_name}] Round {round_num + 1}/{max_rounds}")
 
             if job_id:
-                from app.ensemble import progress
+                from app.services import progress
                 progress.emit(job_id, "agent_thinking",
                     f"[{self.agent_name}] Round {round_num + 1}...",
                     agent=self.agent_name, round=round_num + 1)
@@ -163,7 +182,7 @@ class BaseAgent(ABC):
                 if cross_exec_prev_id and "previous_response_id" in str(e).lower():
                     logger.warning(f"[{self.agent_name}] Stale response_id, retrying without it")
                     if job_id:
-                        from app.ensemble import progress
+                        from app.services import progress
                         progress.emit(job_id, "agent_thinking",
                             f"[{self.agent_name}] Contexto anterior expirado, reiniciando...",
                             agent=self.agent_name)
@@ -228,7 +247,7 @@ class BaseAgent(ABC):
         set_job_id(job_id)
 
         if job_id:
-            from app.ensemble import progress
+            from app.services import progress
             progress.emit(job_id, "function_call",
                 f"[{self.agent_name}] Executando: {fc_item.name}",
                 agent=self.agent_name, function=fc_item.name)
@@ -285,7 +304,7 @@ class BaseAgent(ABC):
                 f"[{self.agent_name}] {error_count}/{len(function_calls)} function calls falharam"
             )
             if job_id:
-                from app.ensemble import progress
+                from app.services import progress
                 progress.emit(job_id, "warning",
                     f"[{self.agent_name}] {error_count}/{len(function_calls)} chamadas falharam",
                     agent=self.agent_name)

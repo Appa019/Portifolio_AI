@@ -18,22 +18,9 @@ aiohttp
 playwright
 yfinance>=0.2.54
 
-# === Technical Analysis ===
-ta
+# === Data Processing ===
 pandas>=2.2
 numpy>=1.26
-
-# === Machine Learning ===
-scikit-learn>=1.4
-xgboost>=2.0
-
-# === Deep Learning (GPU) ===
-# torch instalado separadamente com CUDA: pip install torch --index-url https://download.pytorch.org/whl/cu121
-pytorch-lightning>=2.2
-pytorch-forecasting>=1.1
-
-# === Optimization ===
-optuna>=3.5
 
 # === Email ===
 aiosmtplib
@@ -41,6 +28,9 @@ jinja2
 
 # === Scheduler ===
 apscheduler>=3.10
+
+# === Telegram ===
+python-telegram-bot>=20.0
 
 # === Utilities ===
 python-dotenv
